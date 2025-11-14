@@ -32,7 +32,12 @@ function chunkText(text: string, maxLength: number = 5000): string[] {
   return chunks
 }
 
-async function generateTTSWithGemini(text: string, language: string): Promise<{ buffer: Buffer; mimeType: string }> {
+async function generateTTSWithGemini(
+  text: string, 
+  language: string,
+  retryCount = 0,
+  maxRetries = 3
+): Promise<{ buffer: Buffer; mimeType: string }> {
   const apiKey = process.env.GEMINI_API_KEY
 
   if (!apiKey) {
@@ -41,6 +46,8 @@ async function generateTTSWithGemini(text: string, language: string): Promise<{ 
 
   const model = "gemini-2.5-flash-preview-tts"
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+
+  console.log(`[TTS] Calling Gemini TTS API... (attempt ${retryCount + 1}/${maxRetries + 1})`)
 
   try {
     const response = await fetch(url, {
@@ -66,6 +73,15 @@ async function generateTTSWithGemini(text: string, language: string): Promise<{ 
 
     if (!response.ok) {
       const errorData = await response.text()
+      
+      // Retry on 500 and 503 errors (internal server errors, overloaded) with exponential backoff
+      if ((response.status === 500 || response.status === 503) && retryCount < maxRetries) {
+        const delay = Math.pow(2, retryCount) * 1000 // 1s, 2s, 4s
+        console.log(`[TTS] Gemini ${response.status} error, retrying after ${delay}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        return generateTTSWithGemini(text, language, retryCount + 1, maxRetries)
+      }
+      
       throw new Error(`Gemini TTS API error: ${response.status} - ${errorData}`)
     }
 

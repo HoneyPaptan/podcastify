@@ -57,6 +57,7 @@ async function translateText(text: string, targetLocale: string, sourceLocale: s
 }
 
 const UI_KEYS = [
+  // Home page
   "Multilingual Podcast Generator",
   "Turn any blog into a multilingual podcast in seconds",
   "Enter Blog URL",
@@ -67,6 +68,46 @@ const UI_KEYS = [
   "Please enter a valid URL",
   "Invalid URL format",
   "An error occurred",
+  
+  // Canvas UI
+  "Podcastify",
+  "Blog to Podcast Converter",
+  "LEGEND",
+  "Chapter Node",
+  "Audio Node",
+  "Merge Group",
+  "View Content",
+  "Audio Available",
+  "Translating...",
+  "Generate Audio",
+  "Generating...",
+  "Audio Ready",
+  "Download Audio",
+  "Download Merged",
+  "words",
+  "Language:",
+  "Audio",
+  "Chapter",
+  "Select",
+  "audios to merge",
+  "audio",
+  "audios",
+  "selected",
+  "Select audios with the same language to merge",
+  "Create Merge Group",
+  "Clear",
+  "Audio download started!",
+  "Merged audio download started!",
+  "Failed to download merged audio",
+  "Merging audio files...",
+  "Please select at least 2 audio nodes to merge",
+  "All selected audios must be in the same language",
+  "Merge group created with",
+  "Merge group removed",
+  "Audio generated successfully!",
+  "Failed to generate audio",
+  "Generating",
+  "audio...",
 ]
 
 export function LingoProvider({ children }: { children: ReactNode }) {

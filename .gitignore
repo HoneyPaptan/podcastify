@@ -1,4 +1,6 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+#custom
+project.xml
 
 # dependencies
 /node_modules

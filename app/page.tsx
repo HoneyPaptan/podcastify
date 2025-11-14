@@ -9,7 +9,9 @@ import { useLingo } from "@/lib/lingo"
 import { LanguageSwitcher } from "@/components/language-switcher"
 import { ProcessingStatus } from "@/components/processing-status"
 import { ChapterCard } from "@/components/chapter-card"
+import { PodcastFlow } from "@/components/podcast-flow"
 import { Loader2, Link as LinkIcon } from "lucide-react"
+import { toast } from "sonner"
 import {
   getCachedChapters,
   setCachedChapters,
@@ -49,6 +51,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [translations, setTranslations] = useState<Record<string, Record<string, ChapterTranslation>>>({})
+  const [audioUrlsState, setAudioUrlsState] = useState<Record<string, Record<string, string>>>({})
   const [steps, setSteps] = useState<ProcessingStep[]>([
     { id: "scrape", label: "Scraping blog content", status: "pending" },
     { id: "chapters", label: "Generating chapters", status: "pending" },
@@ -123,6 +126,13 @@ export default function Home() {
     const cachedAudio = getCachedAudio(chapterId, language)
     if (cachedAudio) {
       console.log(`[Cache] Using cached audio for chapter ${chapterId} in ${language}`)
+      setAudioUrlsState((prev) => ({
+        ...prev,
+        [chapterId]: {
+          ...prev[chapterId],
+          [language]: cachedAudio,
+        },
+      }))
       return cachedAudio
     }
 
@@ -146,6 +156,13 @@ export default function Home() {
 
       const data = await response.json()
       setCachedAudio(chapterId, language, data.audioUrl)
+      setAudioUrlsState((prev) => ({
+        ...prev,
+        [chapterId]: {
+          ...prev[chapterId],
+          [language]: data.audioUrl,
+        },
+      }))
       return data.audioUrl
     } catch (error) {
       console.error("Audio generation error:", error)
@@ -168,6 +185,8 @@ export default function Home() {
       setChapters(cachedChapters)
       const chapterIds = cachedChapters.map((ch: Chapter) => ch.id)
       setTranslations(getAllCachedTranslations(chapterIds))
+      setAudioUrlsState(getAllCachedAudios(chapterIds))
+      toast.success("Loaded from cache")
       return
     }
 
@@ -187,6 +206,7 @@ export default function Home() {
 
       console.log("[Step 1/3] Starting scrape...")
       updateStep("scrape", "processing")
+      toast.loading("Scraping blog content...", { id: "scrape" })
       const response = await fetch("/api/scrape", {
         method: "POST",
         headers: {
@@ -198,15 +218,18 @@ export default function Home() {
       if (!response.ok) {
         const errorData = await response.json()
         updateStep("scrape", "error")
+        toast.error(errorData.error || "Failed to scrape blog", { id: "scrape" })
         throw new Error(errorData.error || t("An error occurred"))
       }
 
       const scrapedData = await response.json()
       console.log("[Step 1/3] Scrape completed:", scrapedData)
       updateStep("scrape", "completed")
+      toast.success("Blog content scraped", { id: "scrape" })
 
       console.log("[Step 2/3] Starting chapter generation...")
       updateStep("chapters", "processing")
+      toast.loading("Generating chapters...", { id: "chapters" })
       const chaptersResponse = await fetch("/api/chapters", {
         method: "POST",
         headers: {
@@ -221,6 +244,7 @@ export default function Home() {
       if (!chaptersResponse.ok) {
         const errorData = await chaptersResponse.json()
         updateStep("chapters", "error")
+        toast.error(errorData.error || "Failed to generate chapters", { id: "chapters" })
         throw new Error(errorData.error || t("Failed to generate chapters"))
       }
 
@@ -228,9 +252,11 @@ export default function Home() {
       console.log("[Step 2/3] Chapters generated:", chaptersData)
       console.log(`[Step 2/3] Total chapters: ${chaptersData.totalChapters}, Total words: ${chaptersData.totalWords}`)
       updateStep("chapters", "completed")
+      toast.success("Chapters generated", { id: "chapters" })
 
       console.log("[Step 3/3] Starting summarization...")
       updateStep("summarize", "processing")
+      toast.loading("Summarizing to 3 chapters...", { id: "summarize" })
       
       const summarizeResponse = await fetch("/api/summarize-chapters", {
         method: "POST",
@@ -247,6 +273,7 @@ export default function Home() {
         const errorData = await summarizeResponse.json()
         updateStep("summarize", "error")
         console.error("[Step 3/3] Summarization failed:", errorData)
+        toast.error(errorData.error || "Failed to summarize chapters", { id: "summarize" })
         throw new Error(errorData.error || t("Failed to summarize chapters"))
       }
 
@@ -255,12 +282,18 @@ export default function Home() {
       console.log(`[Step 3/3] Reduced from ${summarizedData.originalChapters} to ${summarizedData.totalChapters} chapters`)
       console.log(`[Step 3/3] Word count: ${summarizedData.originalWords} → ${summarizedData.totalWords}`)
       updateStep("summarize", "completed")
+      toast.success("Podcast ready!", { id: "summarize" })
 
       setCachedChapters(normalizedUrl, summarizedData.chapters)
       setChapters(summarizedData.chapters)
       
       const chapterIds = summarizedData.chapters.map((ch: Chapter) => ch.id)
       setTranslations(getAllCachedTranslations(chapterIds))
+      setAudioUrlsState(getAllCachedAudios(chapterIds))
+      
+      setTimeout(() => {
+        setSteps([])
+      }, 500)
     } catch (err) {
       console.error("Error in processing:", err)
       setError(err instanceof Error ? err.message : t("An error occurred"))
@@ -270,91 +303,75 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted/20 px-4 py-12">
-      <div className="absolute top-4 right-4">
+    <>
+      <div className="absolute top-4 right-4 z-50">
         <LanguageSwitcher />
       </div>
-      <div className="w-full max-w-2xl space-y-8">
-        <div className="space-y-4 text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            {t("Multilingual Podcast Generator")}
-          </h1>
-          <p className="text-lg text-muted-foreground sm:text-xl">
-            {t("Turn any blog into a multilingual podcast in seconds")}
-          </p>
-        </div>
-
-        <Card className="border-2 shadow-lg">
-          <CardHeader className="space-y-2">
-            <CardTitle className="text-2xl">{t("Enter Blog URL")}</CardTitle>
-            <CardDescription>
-              {t("Paste any blog URL to extract content and generate multilingual podcast audio")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    type="url"
-                    placeholder={t("https://example.com/blog-post")}
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    disabled={isLoading}
-                    className="pl-10"
-                  />
-                </div>
-                <Button type="submit" disabled={isLoading} size="lg">
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      {t("Processing...")}
-                    </>
-                  ) : (
-                    t("Generate Podcast")
-                  )}
-                </Button>
-              </div>
-              {error && (
-                <p className="text-sm text-destructive">{error}</p>
-              )}
-            </form>
-          </CardContent>
-        </Card>
-
-        {isLoading && <ProcessingStatus steps={steps} />}
-
-        {chapters.length > 0 && !isLoading && (
-          <div className="w-full max-w-4xl space-y-6">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold">Generated Chapters</h2>
-              <p className="text-muted-foreground">
-                Click on language buttons to translate each chapter on-demand
+      {!isLoading && chapters.length === 0 ? (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted/20 px-4 py-12">
+          <div className="w-full max-w-2xl space-y-8">
+            <div className="space-y-4 text-center">
+              <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+                {t("Multilingual Podcast Generator")}
+              </h1>
+              <p className="text-lg text-muted-foreground sm:text-xl">
+                {t("Turn any blog into a multilingual podcast in seconds")}
               </p>
             </div>
-            {chapters.map((chapter) => {
-              const cachedAudios = getAllCachedAudios(chapters.map((ch: Chapter) => ch.id))
-              const chapterAudios = cachedAudios[chapter.id] || {}
-              
-              if (Object.keys(chapterAudios).length > 0) {
-                console.log(`[Cache] Loaded ${Object.keys(chapterAudios).length} cached audio URLs for chapter ${chapter.id}`)
-              }
-              
-              return (
-                <ChapterCard
-                  key={chapter.id}
-                  chapter={chapter}
-                  translations={translations[chapter.id] || {}}
-                  onTranslate={handleTranslateChapter}
-                  onGenerateAudio={handleGenerateAudio}
-                  initialAudioUrls={chapterAudios}
-                />
-              )
-            })}
+
+            <Card className="border-2 shadow-lg">
+              <CardHeader className="space-y-2">
+                <CardTitle className="text-2xl">{t("Enter Blog URL")}</CardTitle>
+                <CardDescription>
+                  {t("Paste any blog URL to extract content and generate multilingual podcast audio")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        type="url"
+                        placeholder={t("https://example.com/blog-post")}
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        disabled={isLoading}
+                        className="pl-10"
+                      />
+                    </div>
+                    <Button type="submit" disabled={isLoading} size="lg">
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          {t("Processing...")}
+                        </>
+                      ) : (
+                        t("Generate Podcast")
+                      )}
+                    </Button>
+                  </div>
+                  {error && (
+                    <p className="text-sm text-destructive">{error}</p>
+                  )}
+                </form>
+              </CardContent>
+            </Card>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      ) : (
+        <div className="fixed inset-0 w-screen h-screen">
+          <PodcastFlow
+            steps={steps}
+            chapters={chapters}
+            translations={translations}
+            audioUrls={audioUrlsState}
+            onTranslate={handleTranslateChapter}
+            onGenerateAudio={handleGenerateAudio}
+            isLoading={isLoading}
+          />
+        </div>
+      )}
+    </>
   )
 }

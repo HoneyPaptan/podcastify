@@ -8,15 +8,20 @@ interface Chapter {
   wordCount: number
 }
 
-async function summarizeWithGemini(text: string, targetChapters: number = 3): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY
-  
+async function summarizeWithOpenRouter(text: string, targetChapters: number = 3): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is not set")
+    throw new Error("OPENROUTER_API_KEY environment variable is not set")
   }
 
-  const model = "gemini-2.0-flash-lite"
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+  const models = [
+    "anthropic/claude-3.5-sonnet",
+    "openai/gpt-4o-mini",
+    "google/gemini-2.0-flash-exp",
+  ]
+
+  const url = "https://openrouter.ai/api/v1/chat/completions"
 
   const prompt = `You are a content summarizer. Your task is to condense the following blog content into exactly ${targetChapters} well-structured chapters.
 
@@ -41,48 +46,62 @@ CHAPTER 3: [Title]
 Content to summarize:
 ${text}`
 
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: prompt,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 8192,
+  let lastError: Error | null = null
+
+  for (const model of models) {
+    try {
+      console.log(`[Summarize] Trying model: ${model}`)
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+          "HTTP-Referer": process.env.OPENROUTER_REFERER_URL || "https://podcastify.app",
+          "X-Title": "Podcastify",
         },
-      }),
-    })
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+          temperature: 0.7,
+          max_tokens: 4000,
+        }),
+      })
 
-    if (!response.ok) {
-      const errorData = await response.text()
-      throw new Error(`Gemini API error: ${response.status} - ${errorData}`)
+      if (!response.ok) {
+        const errorData = await response.text()
+        lastError = new Error(`OpenRouter API error (${model}): ${response.status} - ${errorData}`)
+        console.warn(`[Summarize] Model ${model} failed, trying next...`)
+        continue
+      }
+
+      const data = await response.json()
+
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        lastError = new Error(`Invalid response format from ${model}`)
+        console.warn(`[Summarize] Invalid response from ${model}, trying next...`)
+        continue
+      }
+
+      const summarizedText = data.choices[0].message.content.trim()
+      console.log(`[Summarize] Successfully used model: ${model}`)
+      return summarizedText
+    } catch (error) {
+      console.error(`[Summarize] Error with model ${model}:`, error)
+      lastError = error instanceof Error ? error : new Error(String(error))
+      continue
     }
-
-    const data = await response.json()
-
-    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-      throw new Error("Invalid response format from Gemini API")
-    }
-
-    const summarizedText = data.candidates[0].content.parts[0].text.trim()
-    return summarizedText
-  } catch (error) {
-    console.error("Gemini summarization error:", error)
-    throw error
   }
+
+  if (lastError) {
+    throw new Error(`All models failed. Last error: ${lastError.message}`)
+  }
+
+  throw new Error("No models available")
 }
 
 function parseSummarizedChapters(summarizedText: string): Chapter[] {
@@ -147,10 +166,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const apiKey = process.env.GEMINI_API_KEY
+    const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {
       return NextResponse.json(
-        { error: "GEMINI_API_KEY environment variable is not set" },
+        { error: "OPENROUTER_API_KEY environment variable is not set" },
         { status: 500 }
       )
     }
@@ -160,7 +179,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Summarize] Condensing ${chapters.length} chapters (${totalWords} words) into ${targetChapters} chapters`)
 
-    const summarizedText = await summarizeWithGemini(combinedText, targetChapters)
+    const summarizedText = await summarizeWithOpenRouter(combinedText, targetChapters)
     const summarizedChapters = parseSummarizedChapters(summarizedText)
 
     const finalWordCount = summarizedChapters.reduce((sum, ch) => sum + ch.wordCount, 0)
@@ -176,9 +195,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Summarization error:", error)
     return NextResponse.json(
-      { error: "An error occurred while summarizing chapters" },
+      { error: error instanceof Error ? error.message : "An error occurred while summarizing chapters" },
       { status: 500 }
     )
   }
 }
-

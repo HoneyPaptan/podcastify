@@ -7,13 +7,90 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton"
 import { useLingo } from "@/lib/lingo"
 import { LanguageSwitcher } from "@/components/language-switcher"
+import { ProcessingStatus } from "@/components/processing-status"
+import { ChapterCard } from "@/components/chapter-card"
 import { Loader2, Link as LinkIcon } from "lucide-react"
+
+type StepStatus = "pending" | "processing" | "completed" | "error"
+
+interface ProcessingStep {
+  id: string
+  label: string
+  status: StepStatus
+}
+
+interface Chapter {
+  id: string
+  title: string
+  content: string
+  textContent: string
+  wordCount: number
+}
+
+interface ChapterTranslation {
+  title: string
+  textContent: string
+}
 
 export default function Home() {
   const { t } = useLingo()
   const [url, setUrl] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [translations, setTranslations] = useState<Record<string, Record<string, ChapterTranslation>>>({})
+  const [steps, setSteps] = useState<ProcessingStep[]>([
+    { id: "scrape", label: "Scraping blog content", status: "pending" },
+    { id: "chapters", label: "Generating chapters", status: "pending" },
+    { id: "summarize", label: "Summarizing to 3 chapters", status: "pending" },
+  ])
+
+  const updateStep = (stepId: string, status: StepStatus) => {
+    setSteps((prev) =>
+      prev.map((step) => (step.id === stepId ? { ...step, status } : step))
+    )
+  }
+
+  const handleTranslateChapter = async (chapterId: string, language: string) => {
+    const chapter = chapters.find((ch) => ch.id === chapterId)
+    if (!chapter) return
+
+    if (translations[chapterId]?.[language]) {
+      return
+    }
+
+    try {
+      const response = await fetch("/api/translate-chapter", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          chapter,
+          targetLocale: language,
+          sourceLocale: "en",
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Translation failed")
+      }
+
+      const data = await response.json()
+      
+      setTranslations((prev) => ({
+        ...prev,
+        [chapterId]: {
+          ...prev[chapterId],
+          ...data.translations,
+        },
+      }))
+    } catch (error) {
+      console.error("Translation error:", error)
+      throw error
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,6 +101,11 @@ export default function Home() {
 
     setIsLoading(true)
     setError(null)
+    setSteps([
+      { id: "scrape", label: "Scraping blog content", status: "pending" },
+      { id: "chapters", label: "Generating chapters", status: "pending" },
+      { id: "translate", label: "Translating chapters", status: "pending" },
+    ])
 
     try {
       const urlPattern = /^https?:\/\/.+\..+/
@@ -31,6 +113,8 @@ export default function Home() {
         throw new Error(t("Invalid URL format"))
       }
 
+      console.log("[Step 1/3] Starting scrape...")
+      updateStep("scrape", "processing")
       const response = await fetch("/api/scrape", {
         method: "POST",
         headers: {
@@ -41,14 +125,69 @@ export default function Home() {
 
       if (!response.ok) {
         const errorData = await response.json()
+        updateStep("scrape", "error")
         throw new Error(errorData.error || t("An error occurred"))
       }
 
-      const data = await response.json()
-      console.log("Scraped content:", data)
+      const scrapedData = await response.json()
+      console.log("[Step 1/3] Scrape completed:", scrapedData)
+      updateStep("scrape", "completed")
+
+      console.log("[Step 2/3] Starting chapter generation...")
+      updateStep("chapters", "processing")
+      const chaptersResponse = await fetch("/api/chapters", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: scrapedData.content,
+          textContent: scrapedData.textContent,
+        }),
+      })
+
+      if (!chaptersResponse.ok) {
+        const errorData = await chaptersResponse.json()
+        updateStep("chapters", "error")
+        throw new Error(errorData.error || t("Failed to generate chapters"))
+      }
+
+      const chaptersData = await chaptersResponse.json()
+      console.log("[Step 2/3] Chapters generated:", chaptersData)
+      console.log(`[Step 2/3] Total chapters: ${chaptersData.totalChapters}, Total words: ${chaptersData.totalWords}`)
+      updateStep("chapters", "completed")
+
+      console.log("[Step 3/3] Starting summarization...")
+      updateStep("summarize", "processing")
       
-      // TODO: Store scraped content and proceed to next phase
+      const summarizeResponse = await fetch("/api/summarize-chapters", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          chapters: chaptersData.chapters,
+          targetChapters: 3,
+        }),
+      })
+
+      if (!summarizeResponse.ok) {
+        const errorData = await summarizeResponse.json()
+        updateStep("summarize", "error")
+        console.error("[Step 3/3] Summarization failed:", errorData)
+        throw new Error(errorData.error || t("Failed to summarize chapters"))
+      }
+
+      const summarizedData = await summarizeResponse.json()
+      console.log("[Step 3/3] Summarization completed:", summarizedData)
+      console.log(`[Step 3/3] Reduced from ${summarizedData.originalChapters} to ${summarizedData.totalChapters} chapters`)
+      console.log(`[Step 3/3] Word count: ${summarizedData.originalWords} → ${summarizedData.totalWords}`)
+      updateStep("summarize", "completed")
+
+      setChapters(summarizedData.chapters)
+      setTranslations({})
     } catch (err) {
+      console.error("Error in processing:", err)
       setError(err instanceof Error ? err.message : t("An error occurred"))
     } finally {
       setIsLoading(false)
@@ -109,16 +248,25 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        {isLoading && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-5/6" />
-              </div>
-            </CardContent>
-          </Card>
+        {isLoading && <ProcessingStatus steps={steps} />}
+
+        {chapters.length > 0 && !isLoading && (
+          <div className="w-full max-w-4xl space-y-6">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold">Generated Chapters</h2>
+              <p className="text-muted-foreground">
+                Click on language buttons to translate each chapter on-demand
+              </p>
+            </div>
+            {chapters.map((chapter) => (
+              <ChapterCard
+                key={chapter.id}
+                chapter={chapter}
+                translations={translations[chapter.id] || {}}
+                onTranslate={handleTranslateChapter}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>

@@ -1,0 +1,189 @@
+interface CachedChapters {
+  url: string
+  chapters: any[]
+  timestamp: number
+}
+
+interface CachedTranslation {
+  chapterId: string
+  language: string
+  translation: {
+    title: string
+    textContent: string
+  }
+}
+
+interface CachedAudio {
+  chapterId: string
+  language: string
+  audioUrl: string
+}
+
+const CACHE_KEYS = {
+  CHAPTERS: "podcastify_chapters",
+  TRANSLATIONS: "podcastify_translations",
+  AUDIOS: "podcastify_audios",
+}
+
+export function getCachedChapters(url: string): any[] | null {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.CHAPTERS)
+    if (!cached) return null
+
+    const data: CachedChapters = JSON.parse(cached)
+    if (data.url === url && Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+      return data.chapters
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function setCachedChapters(url: string, chapters: any[]): void {
+  try {
+    const data: CachedChapters = {
+      url,
+      chapters,
+      timestamp: Date.now(),
+    }
+    localStorage.setItem(CACHE_KEYS.CHAPTERS, JSON.stringify(data))
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+export function getCachedTranslation(chapterId: string, language: string): { title: string; textContent: string } | null {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.TRANSLATIONS)
+    if (!cached) return null
+
+    const translations: CachedTranslation[] = JSON.parse(cached)
+    const found = translations.find(
+      (t) => t.chapterId === chapterId && t.language === language
+    )
+    return found ? found.translation : null
+  } catch {
+    return null
+  }
+}
+
+export function setCachedTranslation(
+  chapterId: string,
+  language: string,
+  translation: { title: string; textContent: string }
+): void {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.TRANSLATIONS)
+    const translations: CachedTranslation[] = cached ? JSON.parse(cached) : []
+    
+    const index = translations.findIndex(
+      (t) => t.chapterId === chapterId && t.language === language
+    )
+
+    const newTranslation: CachedTranslation = {
+      chapterId,
+      language,
+      translation,
+    }
+
+    if (index >= 0) {
+      translations[index] = newTranslation
+    } else {
+      translations.push(newTranslation)
+    }
+
+    localStorage.setItem(CACHE_KEYS.TRANSLATIONS, JSON.stringify(translations))
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+export function getCachedAudio(chapterId: string, language: string): string | null {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.AUDIOS)
+    if (!cached) return null
+
+    const audios: CachedAudio[] = JSON.parse(cached)
+    const found = audios.find(
+      (a) => a.chapterId === chapterId && a.language === language
+    )
+    return found ? found.audioUrl : null
+  } catch {
+    return null
+  }
+}
+
+export function setCachedAudio(chapterId: string, language: string, audioUrl: string): void {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.AUDIOS)
+    const audios: CachedAudio[] = cached ? JSON.parse(cached) : []
+    
+    const index = audios.findIndex(
+      (a) => a.chapterId === chapterId && a.language === language
+    )
+
+    const newAudio: CachedAudio = {
+      chapterId,
+      language,
+      audioUrl,
+    }
+
+    if (index >= 0) {
+      audios[index] = newAudio
+    } else {
+      audios.push(newAudio)
+    }
+
+    localStorage.setItem(CACHE_KEYS.AUDIOS, JSON.stringify(audios))
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+export function getAllCachedTranslations(chapterIds: string[]): Record<string, Record<string, { title: string; textContent: string }>> {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.TRANSLATIONS)
+    if (!cached) return {}
+
+    const translations: CachedTranslation[] = JSON.parse(cached)
+    const result: Record<string, Record<string, { title: string; textContent: string }>> = {}
+
+    chapterIds.forEach((chapterId) => {
+      result[chapterId] = {}
+      translations
+        .filter((t) => t.chapterId === chapterId)
+        .forEach((t) => {
+          result[chapterId][t.language] = t.translation
+        })
+    })
+
+    return result
+  } catch {
+    return {}
+  }
+}
+
+export function getAllCachedAudios(chapterIds: string[]): Record<string, Record<string, string>> {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.AUDIOS)
+    if (!cached) return {}
+
+    const audios: CachedAudio[] = JSON.parse(cached)
+    const result: Record<string, Record<string, string>> = {}
+
+    chapterIds.forEach((chapterId) => {
+      result[chapterId] = {}
+      audios
+        .filter((a) => a.chapterId === chapterId)
+        .forEach((a) => {
+          result[chapterId][a.language] = a.audioUrl
+        })
+    })
+
+    return result
+  } catch {
+    return {}
+  }
+}
+

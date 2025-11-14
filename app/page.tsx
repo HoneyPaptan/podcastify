@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +10,16 @@ import { LanguageSwitcher } from "@/components/language-switcher"
 import { ProcessingStatus } from "@/components/processing-status"
 import { ChapterCard } from "@/components/chapter-card"
 import { Loader2, Link as LinkIcon } from "lucide-react"
+import {
+  getCachedChapters,
+  setCachedChapters,
+  getCachedTranslation,
+  setCachedTranslation,
+  getCachedAudio,
+  setCachedAudio,
+  getAllCachedTranslations,
+  getAllCachedAudios,
+} from "@/lib/cache"
 
 type StepStatus = "pending" | "processing" | "completed" | "error"
 
@@ -59,6 +69,19 @@ export default function Home() {
       return
     }
 
+    const cachedTranslation = getCachedTranslation(chapterId, language)
+    if (cachedTranslation) {
+      console.log(`[Cache] Using cached translation for chapter ${chapterId} in ${language}`)
+      setTranslations((prev) => ({
+        ...prev,
+        [chapterId]: {
+          ...prev[chapterId],
+          [language]: cachedTranslation,
+        },
+      }))
+      return
+    }
+
     try {
       const response = await fetch("/api/translate-chapter", {
         method: "POST",
@@ -78,16 +101,54 @@ export default function Home() {
       }
 
       const data = await response.json()
+      const translation = data.translations[language]
       
-      setTranslations((prev) => ({
-        ...prev,
-        [chapterId]: {
-          ...prev[chapterId],
-          ...data.translations,
-        },
-      }))
+      if (translation) {
+        setCachedTranslation(chapterId, language, translation)
+        setTranslations((prev) => ({
+          ...prev,
+          [chapterId]: {
+            ...prev[chapterId],
+            [language]: translation,
+          },
+        }))
+      }
     } catch (error) {
       console.error("Translation error:", error)
+      throw error
+    }
+  }
+
+  const handleGenerateAudio = async (chapterId: string, language: string, text: string): Promise<string> => {
+    const cachedAudio = getCachedAudio(chapterId, language)
+    if (cachedAudio) {
+      console.log(`[Cache] Using cached audio for chapter ${chapterId} in ${language}`)
+      return cachedAudio
+    }
+
+    try {
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text,
+          language,
+          chapterId,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Audio generation failed")
+      }
+
+      const data = await response.json()
+      setCachedAudio(chapterId, language, data.audioUrl)
+      return data.audioUrl
+    } catch (error) {
+      console.error("Audio generation error:", error)
       throw error
     }
   }
@@ -99,17 +160,28 @@ export default function Home() {
       return
     }
 
+    const normalizedUrl = url.trim().toLowerCase()
+    const cachedChapters = getCachedChapters(normalizedUrl)
+    
+    if (cachedChapters && cachedChapters.length > 0) {
+      console.log(`[Cache] Using cached chapters for ${normalizedUrl}`)
+      setChapters(cachedChapters)
+      const chapterIds = cachedChapters.map((ch: Chapter) => ch.id)
+      setTranslations(getAllCachedTranslations(chapterIds))
+      return
+    }
+
     setIsLoading(true)
     setError(null)
     setSteps([
       { id: "scrape", label: "Scraping blog content", status: "pending" },
       { id: "chapters", label: "Generating chapters", status: "pending" },
-      { id: "translate", label: "Translating chapters", status: "pending" },
+      { id: "summarize", label: "Summarizing to 3 chapters", status: "pending" },
     ])
 
     try {
       const urlPattern = /^https?:\/\/.+\..+/
-      if (!urlPattern.test(url.trim())) {
+      if (!urlPattern.test(normalizedUrl)) {
         throw new Error(t("Invalid URL format"))
       }
 
@@ -120,7 +192,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ url: normalizedUrl }),
       })
 
       if (!response.ok) {
@@ -184,8 +256,11 @@ export default function Home() {
       console.log(`[Step 3/3] Word count: ${summarizedData.originalWords} → ${summarizedData.totalWords}`)
       updateStep("summarize", "completed")
 
+      setCachedChapters(normalizedUrl, summarizedData.chapters)
       setChapters(summarizedData.chapters)
-      setTranslations({})
+      
+      const chapterIds = summarizedData.chapters.map((ch: Chapter) => ch.id)
+      setTranslations(getAllCachedTranslations(chapterIds))
     } catch (err) {
       console.error("Error in processing:", err)
       setError(err instanceof Error ? err.message : t("An error occurred"))
@@ -258,14 +333,25 @@ export default function Home() {
                 Click on language buttons to translate each chapter on-demand
               </p>
             </div>
-            {chapters.map((chapter) => (
-              <ChapterCard
-                key={chapter.id}
-                chapter={chapter}
-                translations={translations[chapter.id] || {}}
-                onTranslate={handleTranslateChapter}
-              />
-            ))}
+            {chapters.map((chapter) => {
+              const cachedAudios = getAllCachedAudios(chapters.map((ch: Chapter) => ch.id))
+              const chapterAudios = cachedAudios[chapter.id] || {}
+              
+              if (Object.keys(chapterAudios).length > 0) {
+                console.log(`[Cache] Loaded ${Object.keys(chapterAudios).length} cached audio URLs for chapter ${chapter.id}`)
+              }
+              
+              return (
+                <ChapterCard
+                  key={chapter.id}
+                  chapter={chapter}
+                  translations={translations[chapter.id] || {}}
+                  onTranslate={handleTranslateChapter}
+                  onGenerateAudio={handleGenerateAudio}
+                  initialAudioUrls={chapterAudios}
+                />
+              )
+            })}
           </div>
         )}
       </div>

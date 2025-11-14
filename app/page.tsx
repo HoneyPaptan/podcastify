@@ -31,8 +31,23 @@ export default function Home() {
         throw new Error(t("Invalid URL format"))
       }
 
-      // TODO: Implement API call to scrape and process
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const response = await fetch("/api/scrape", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: url.trim() }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || t("An error occurred"))
+      }
+
+      const data = await response.json()
+      console.log("Scraped content:", data)
+      
+      // TODO: Store scraped content and proceed to next phase
     } catch (err) {
       setError(err instanceof Error ? err.message : t("An error occurred"))
     } finally {

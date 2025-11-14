@@ -10,6 +10,7 @@ import { LanguageSwitcher } from "@/components/language-switcher"
 import { ProcessingStatus } from "@/components/processing-status"
 import { ChapterCard } from "@/components/chapter-card"
 import { PodcastFlow } from "@/components/podcast-flow"
+import { JobsViewer } from "@/components/jobs-viewer"
 import { Loader2, Link as LinkIcon } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -21,6 +22,9 @@ import {
   setCachedAudio,
   getAllCachedTranslations,
   getAllCachedAudios,
+  saveCurrentSession,
+  getCurrentSession,
+  clearCurrentSession,
 } from "@/lib/cache"
 
 type StepStatus = "pending" | "processing" | "completed" | "error"
@@ -52,16 +56,52 @@ export default function Home() {
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [translations, setTranslations] = useState<Record<string, Record<string, ChapterTranslation>>>({})
   const [audioUrlsState, setAudioUrlsState] = useState<Record<string, Record<string, string>>>({})
+  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`)
   const [steps, setSteps] = useState<ProcessingStep[]>([
     { id: "scrape", label: "Scraping blog content", status: "pending" },
     { id: "chapters", label: "Generating chapters", status: "pending" },
     { id: "summarize", label: "Summarizing to 3 chapters", status: "pending" },
   ])
 
+  // Restore session on mount
+  useEffect(() => {
+    const session = getCurrentSession()
+    if (session) {
+      console.log("[Session] Restoring previous session:", session.url)
+      setUrl(session.url)
+      setChapters(session.chapters)
+      setTranslations(session.translations)
+      setAudioUrlsState(session.audioUrls)
+      toast.success("Restored previous session")
+    }
+  }, [])
+
+  // Save session whenever chapters/translations/audio changes
+  useEffect(() => {
+    if (chapters.length > 0) {
+      saveCurrentSession(url, chapters, translations, audioUrlsState)
+    }
+  }, [chapters, translations, audioUrlsState, url])
+
   const updateStep = (stepId: string, status: StepStatus) => {
     setSteps((prev) =>
       prev.map((step) => (step.id === stepId ? { ...step, status } : step))
     )
+  }
+
+  const handleStartNew = () => {
+    clearCurrentSession()
+    setUrl("")
+    setChapters([])
+    setTranslations({})
+    setAudioUrlsState({})
+    setError(null)
+    setSteps([
+      { id: "scrape", label: "Scraping blog content", status: "pending" },
+      { id: "chapters", label: "Generating chapters", status: "pending" },
+      { id: "summarize", label: "Summarizing to 3 chapters", status: "pending" },
+    ])
+    toast.success("Started new session")
   }
 
   const handleTranslateChapter = async (chapterId: string, language: string) => {
@@ -137,7 +177,8 @@ export default function Home() {
     }
 
     try {
-      const response = await fetch("/api/tts", {
+      // Trigger background job via Inngest
+      const response = await fetch("/api/tts-async", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -146,6 +187,7 @@ export default function Home() {
           text,
           language,
           chapterId,
+          sessionId,
         }),
       })
 
@@ -155,17 +197,70 @@ export default function Home() {
       }
 
       const data = await response.json()
-      setCachedAudio(chapterId, language, data.audioUrl)
-      setAudioUrlsState((prev) => ({
-        ...prev,
-        [chapterId]: {
-          ...prev[chapterId],
-          [language]: data.audioUrl,
-        },
-      }))
-      return data.audioUrl
+      
+      // If cached, return immediately
+      if (data.cached && data.audioUrl) {
+        setCachedAudio(chapterId, language, data.audioUrl)
+        setAudioUrlsState((prev) => ({
+          ...prev,
+          [chapterId]: {
+            ...prev[chapterId],
+            [language]: data.audioUrl,
+          },
+        }))
+        return data.audioUrl
+      }
+
+      // Background job triggered - poll for completion
+      const jobId = data.jobId
+      console.log(`[Background] Audio generation job started: ${jobId}`)
+      toast.info(`Audio generation started in background for ${language}`)
+
+      // Poll for job completion
+      const pollInterval = 2000 // 2 seconds
+      const maxAttempts = 60 // Max 2 minutes
+      let attempts = 0
+
+      const pollJob = async (): Promise<string> => {
+        if (attempts >= maxAttempts) {
+          throw new Error("Audio generation timeout")
+        }
+
+        attempts++
+        const jobResponse = await fetch(`/api/jobs?jobId=${jobId}`)
+        
+        if (!jobResponse.ok) {
+          throw new Error("Failed to fetch job status")
+        }
+
+        const jobData = await jobResponse.json()
+        const job = jobData.job
+
+        if (job.status === "completed" && job.audioUrl) {
+          console.log(`[Background] Audio generation completed: ${job.audioUrl}`)
+          setCachedAudio(chapterId, language, job.audioUrl)
+          setAudioUrlsState((prev) => ({
+            ...prev,
+            [chapterId]: {
+              ...prev[chapterId],
+              [language]: job.audioUrl,
+            },
+          }))
+          toast.success(`Audio ready for ${language}`)
+          return job.audioUrl
+        } else if (job.status === "failed") {
+          throw new Error(job.error || "Audio generation failed")
+        } else {
+          // Still processing, poll again
+          await new Promise((resolve) => setTimeout(resolve, pollInterval))
+          return pollJob()
+        }
+      }
+
+      return await pollJob()
     } catch (error) {
       console.error("Audio generation error:", error)
+      toast.error(`Failed to generate audio: ${error instanceof Error ? error.message : 'Unknown error'}`)
       throw error
     }
   }
@@ -360,18 +455,35 @@ export default function Home() {
           </div>
         </div>
       ) : (
-        <div className="fixed inset-0 w-screen h-screen">
-          <PodcastFlow
-            steps={steps}
-            chapters={chapters}
-            translations={translations}
-            audioUrls={audioUrlsState}
-            onTranslate={handleTranslateChapter}
-            onGenerateAudio={handleGenerateAudio}
-            isLoading={isLoading}
-          />
-        </div>
+        <>
+          {/* Start New Button */}
+          <div className="absolute top-4 left-4 z-50">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleStartNew}
+              className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+            >
+              {t("Start New Podcast")}
+            </Button>
+          </div>
+          
+          <div className="fixed inset-0 w-screen h-screen">
+            <PodcastFlow
+              steps={steps}
+              chapters={chapters}
+              translations={translations}
+              audioUrls={audioUrlsState}
+              onTranslate={handleTranslateChapter}
+              onGenerateAudio={handleGenerateAudio}
+              isLoading={isLoading}
+            />
+          </div>
+        </>
       )}
+      
+      {/* Background Jobs Viewer */}
+      {chapters.length > 0 && <JobsViewer sessionId={sessionId} />}
     </>
   )
 }

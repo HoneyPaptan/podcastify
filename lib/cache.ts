@@ -23,6 +23,7 @@ const CACHE_KEYS = {
   CHAPTERS: "podcastify_chapters",
   TRANSLATIONS: "podcastify_translations",
   AUDIOS: "podcastify_audios",
+  CURRENT_SESSION: "podcastify_current_session",
 }
 
 export function getCachedChapters(url: string): any[] | null {
@@ -184,6 +185,61 @@ export function getAllCachedAudios(chapterIds: string[]): Record<string, Record<
     return result
   } catch {
     return {}
+  }
+}
+
+// Session persistence - keeps current state across page reloads
+interface CurrentSession {
+  url: string
+  chapters: any[]
+  translations: Record<string, Record<string, { title: string; textContent: string }>>
+  audioUrls: Record<string, Record<string, string>>
+  timestamp: number
+}
+
+export function saveCurrentSession(
+  url: string,
+  chapters: any[],
+  translations: Record<string, Record<string, { title: string; textContent: string }>>,
+  audioUrls: Record<string, Record<string, string>>
+): void {
+  try {
+    const session: CurrentSession = {
+      url,
+      chapters,
+      translations,
+      audioUrls,
+      timestamp: Date.now(),
+    }
+    localStorage.setItem(CACHE_KEYS.CURRENT_SESSION, JSON.stringify(session))
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+export function getCurrentSession(): CurrentSession | null {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.CURRENT_SESSION)
+    if (!cached) return null
+
+    const session: CurrentSession = JSON.parse(cached)
+    // Session expires after 7 days
+    if (Date.now() - session.timestamp < 7 * 24 * 60 * 60 * 1000) {
+      return session
+    }
+    // Clear expired session
+    clearCurrentSession()
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function clearCurrentSession(): void {
+  try {
+    localStorage.removeItem(CACHE_KEYS.CURRENT_SESSION)
+  } catch {
+    // Ignore localStorage errors
   }
 }
 

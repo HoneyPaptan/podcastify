@@ -39,7 +39,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer"
-import { Loader2, MoreVertical, Globe, Volume2, Play, FileText, Link2, Trash2, Podcast, Download } from "lucide-react"
+import { Loader2, MoreVertical, Globe, Volume2, Play, FileText, Link2, Trash2, Podcast, Download, FolderArchive } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -572,6 +572,64 @@ export function PodcastFlow({
     toast.success(t("Merge group removed"))
   }, [t])
 
+  const downloadAllSelected = useCallback(async () => {
+    if (selectedAudioNodes.size < 1) {
+      toast.error(t("Please select at least one audio to download"))
+      return
+    }
+
+    const toastId = toast.loading(t("Preparing download..."))
+
+    try {
+      // Extract audio node info from selected nodes
+      const audioNodesInfo = Array.from(selectedAudioNodes).map((nodeId) => {
+        const parts = nodeId.split('-')
+        const language = parts[parts.length - 1]
+        const chapterId = parts.slice(1, -1).join('-')
+        return { nodeId, chapterId, language }
+      })
+
+      // Get actual audio file paths
+      const audioFiles = audioNodesInfo.map((node) => {
+        const audioUrl = audioUrls[node.chapterId]?.[node.language]
+        if (!audioUrl) {
+          throw new Error(`Audio not found for ${node.chapterId} - ${node.language}`)
+        }
+        // Extract filename from URL (/audio/filename.wav)
+        return audioUrl.split('/').pop()
+      }).filter(Boolean) as string[]
+
+      console.log("Zipping audio files:", audioFiles)
+
+      const response = await fetch('/api/zip-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioFiles })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create zip file')
+      }
+
+      const result = await response.json()
+
+      // Download the zip file
+      const link = document.createElement('a')
+      link.href = result.url
+      link.download = `podcast-audios-${Date.now()}.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast.success(t("Download started!"), { id: toastId })
+      setSelectedAudioNodes(new Set()) // Clear selection after download
+    } catch (error) {
+      console.error("Download error:", error)
+      toast.error(error instanceof Error ? error.message : t("Failed to download audio files"), { id: toastId })
+    }
+  }, [selectedAudioNodes, audioUrls, t])
+
   const initialNodes = useMemo<Node[]>(() => {
     const nodes: Node[] = []
 
@@ -932,6 +990,16 @@ export function PodcastFlow({
                   {t("Select audios with the same language to merge")}
                 </p>
               </div>
+              <Button
+                onClick={downloadAllSelected}
+                disabled={selectedAudioNodes.size < 1}
+                size="sm"
+                variant="secondary"
+                className="gap-2"
+              >
+                <FolderArchive className="h-4 w-4" />
+                {t("Download All")}
+              </Button>
               <Button
                 onClick={createMergeGroup}
                 disabled={selectedAudioNodes.size < 2}

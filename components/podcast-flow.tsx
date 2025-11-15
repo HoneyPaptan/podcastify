@@ -8,8 +8,6 @@ import {
   Node,
   Edge,
   Background,
-  Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
   addEdge,
@@ -39,7 +37,15 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer"
-import { Loader2, MoreVertical, Globe, Volume2, Play, FileText, Link2, Trash2, Podcast, Download, FolderArchive } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Loader2, MoreVertical, Globe, Volume2, Play, FileText, Link2, Trash2, Podcast, Download, FolderArchive, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -73,6 +79,7 @@ interface PodcastFlowProps {
   onTranslate: (chapterId: string, language: string) => Promise<void>
   onGenerateAudio: (chapterId: string, language: string, text: string) => Promise<string>
   isLoading: boolean
+  onStartNew?: () => void
 }
 
 interface AudioUrlsMap {
@@ -182,8 +189,26 @@ function ChapterNode({
       <Handle type="source" position={Position.Left} className="w-3 h-3" />
       <Handle type="source" position={Position.Right} className="w-3 h-3" />
       
-      <Card className="w-72 p-4 border-2 shadow-lg cursor-pointer hover:shadow-xl transition-shadow">
-        <div className="space-y-3">
+      <div className={cn(
+        "relative rounded-xl",
+        isGeneratingAudio && "p-[2px]"
+      )}>
+        {isGeneratingAudio && (
+          <div 
+            className="absolute inset-0 rounded-xl pointer-events-none"
+            style={{
+              background: "linear-gradient(90deg, hsl(var(--muted-foreground)), hsl(var(--foreground)), hsl(var(--muted-foreground)))",
+              backgroundSize: "200% 100%",
+              animation: "gradient-shift 3s ease-in-out infinite, gradient-border 2s ease-in-out infinite",
+              WebkitAnimation: "gradient-shift 3s ease-in-out infinite, gradient-border 2s ease-in-out infinite",
+            }}
+          />
+        )}
+        <Card className={cn(
+          "w-72 p-4 border-2 shadow-lg cursor-pointer hover:shadow-xl transition-shadow relative bg-card",
+          isGeneratingAudio && "border-transparent"
+        )}>
+          <div className="space-y-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-sm truncate">{displayContent.title}</h3>
@@ -273,9 +298,39 @@ function ChapterNode({
                     </Button>
                   ))}
                 </div>
-                <DrawerClose asChild>
-                  <Button variant="outline">Close</Button>
-                </DrawerClose>
+                <div className="flex gap-2">
+                  <Button
+                    variant="default"
+                    onClick={async () => {
+                      if (!currentAudioUrls[selectedLanguage]) {
+                        await handleGenerateAudio()
+                        setDrawerOpen(false)
+                      }
+                    }}
+                    disabled={isGeneratingAudio || !!currentAudioUrls[selectedLanguage]}
+                    className="flex-1"
+                  >
+                    {isGeneratingAudio ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        {t("Generating...")}
+                      </>
+                    ) : currentAudioUrls[selectedLanguage] ? (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        {t("Audio Available")}
+                      </>
+                    ) : (
+                      <>
+                        <Volume2 className="h-4 w-4 mr-2" />
+                        {t("Generate Audio")}
+                      </>
+                    )}
+                  </Button>
+                  <DrawerClose asChild>
+                    <Button variant="outline" className="flex-1">Close</Button>
+                  </DrawerClose>
+                </div>
               </DrawerFooter>
             </DrawerContent>
           </Drawer>
@@ -291,8 +346,9 @@ function ChapterNode({
               {t("Audio Available")}
             </Badge>
           )}
-        </div>
-      </Card>
+          </div>
+        </Card>
+      </div>
     </>
   )
 }
@@ -307,9 +363,11 @@ function AudioNode({
     isSelected: boolean
     onToggleSelect: (nodeId: string) => void
     nodeId: string
+    chapter?: Chapter
   } 
 }) {
   const { t } = useLingo()
+  const [dialogOpen, setDialogOpen] = useState(false)
   
   const handleDownload = () => {
     const link = document.createElement('a')
@@ -321,48 +379,115 @@ function AudioNode({
     toast.success(t("Audio download started!"))
   }
 
+  const languageName = LANGUAGES.find(l => l.code === data.language)?.name || data.language.toUpperCase()
+
   return (
     <>
-      <Handle type="target" position={Position.Top} className="w-3 h-3" />
-      <Handle type="source" position={Position.Bottom} className="w-3 h-3" />
-      <Handle type="target" position={Position.Left} className="w-3 h-3" />
-      <Handle type="source" position={Position.Right} className="w-3 h-3" />
+      <Handle type="target" position={Position.Top} className="w-2 h-2" />
+      <Handle type="source" position={Position.Bottom} className="w-2 h-2" />
+      <Handle type="target" position={Position.Left} className="w-2 h-2" />
+      <Handle type="source" position={Position.Right} className="w-2 h-2" />
       
-      <Card className={cn(
-        "w-48 p-4 border-2 shadow-lg bg-primary/5 transition-all",
-        data.isSelected && "ring-2 ring-blue-500 border-blue-500 bg-blue-50 dark:bg-blue-950/20"
-      )}>
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center justify-between w-full">
-            <Checkbox 
-              checked={data.isSelected}
-              onCheckedChange={() => data.onToggleSelect(data.nodeId)}
-              className="h-5 w-5 border-[3px] border-foreground/60"
-            />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                  <MoreVertical className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleDownload}>
-                  <Download className="h-3 w-3 mr-2" />
-                  {t("Download Audio")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <Volume2 className="h-8 w-8 text-primary" />
-          <p className="text-xs font-semibold">{t("Audio")}</p>
-          <Badge variant="secondary" className="text-xs">
-            {data.language.toUpperCase()}
-          </Badge>
-          <audio controls className="w-full h-8" src={data.audioUrl} preload="metadata">
-            Your browser does not support the audio element.
-          </audio>
+      <div className="relative">
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <button
+              className={cn(
+                "relative w-16 h-16 rounded-full border border-border bg-card shadow-sm transition-all hover:shadow-md hover:scale-105 cursor-pointer",
+                data.isSelected && "ring-2 ring-primary ring-offset-2"
+              )}
+              onClick={(e) => {
+                // Don't open dialog if clicking checkbox area
+                const target = e.target as HTMLElement
+                if (target.closest('.checkbox-wrapper')) {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  return
+                }
+              }}
+            >
+              {/* Language square in center */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 bg-muted rounded flex items-center justify-center border border-border">
+                  <span className="text-foreground text-xs font-semibold">{data.language.toUpperCase()}</span>
+                </div>
+              </div>
+            </button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("Audio Player")}</DialogTitle>
+              <DialogDescription>
+                {data.chapter?.title || t("Chapter Audio")} • {languageName}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Audio Player */}
+              <div className="w-full">
+                <audio controls className="w-full" src={data.audioUrl} preload="metadata">
+                  {t("Your browser does not support the audio element.")}
+                </audio>
+              </div>
+              
+              {/* Audio Details */}
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{t("Language:")}</span>
+                  <Badge variant="secondary">{languageName}</Badge>
+                </div>
+                {data.chapter && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">{t("Chapter:")}</span>
+                      <span className="font-medium">{data.chapter.title}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">{t("Word Count:")}</span>
+                      <span className="font-medium">{data.chapter.wordCount} {t("words")}</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{t("Format:")}</span>
+                  <span className="font-medium">WAV</span>
+                </div>
+              </div>
+
+              {/* Download Button */}
+              <Button onClick={handleDownload} className="w-full" variant="default">
+                <Download className="h-4 w-4 mr-2" />
+                {t("Download Audio")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+        {/* Checkbox overlay - outside the Dialog */}
+        <div
+          className="absolute -top-1 -left-1 z-30 checkbox-wrapper cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            data.onToggleSelect(data.nodeId)
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+          }}
+          style={{ pointerEvents: 'auto' }}
+        >
+          <Checkbox 
+            checked={data.isSelected}
+            onCheckedChange={(checked) => {
+              data.onToggleSelect(data.nodeId)
+            }}
+            className="h-4 w-4 border-2 border-foreground/60 bg-background"
+            onClick={(e) => {
+              e.stopPropagation()
+              e.preventDefault()
+            }}
+          />
         </div>
-      </Card>
+      </div>
     </>
   )
 }
@@ -423,12 +548,12 @@ function MergeNode({ data }: { data: { group: MergeGroup; onRemoveGroup: (groupI
       <Handle type="target" position={Position.Top} className="w-3 h-3" />
       <Handle type="source" position={Position.Bottom} className="w-3 h-3" />
       
-      <Card className="w-64 p-4 border-2 shadow-lg bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950 dark:to-blue-950 border-purple-500">
+      <Card className="w-64 p-4 border shadow-sm bg-card bg-green-500/10 border-green-500/30">
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Link2 className="h-5 w-5 text-purple-600" />
-              <p className="text-sm font-bold">{t("Merge Group")}</p>
+              <Link2 className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm font-medium">{t("Merge Group")}</p>
             </div>
             <div className="flex items-center gap-1">
               <DropdownMenu>
@@ -517,6 +642,7 @@ export function PodcastFlow({
   onTranslate,
   onGenerateAudio,
   isLoading,
+  onStartNew,
 }: PodcastFlowProps) {
   const { t } = useLingo()
   const [selectedAudioNodes, setSelectedAudioNodes] = useState<Set<string>>(new Set())
@@ -630,27 +756,106 @@ export function PodcastFlow({
     }
   }, [selectedAudioNodes, audioUrls, t])
 
+  const downloadAllAudios = useCallback(async () => {
+    // Get all audio files from all chapters
+    const allAudioFiles: string[] = []
+    
+    chapters.forEach((chapter) => {
+      const chapterAudioUrls = audioUrls[chapter.id] || {}
+      Object.values(chapterAudioUrls).forEach((audioUrl) => {
+        if (audioUrl) {
+          const filename = audioUrl.split('/').pop()
+          if (filename) {
+            allAudioFiles.push(filename)
+          }
+        }
+      })
+    })
+
+    if (allAudioFiles.length === 0) {
+      toast.error(t("No audio files available to download"))
+      return
+    }
+
+    const toastId = toast.loading(t("Preparing download..."))
+
+    try {
+      console.log("Zipping all audio files:", allAudioFiles)
+
+      const response = await fetch('/api/zip-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioFiles: allAudioFiles })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create zip file')
+      }
+
+      const result = await response.json()
+
+      // Download the zip file
+      const link = document.createElement('a')
+      link.href = result.url
+      link.download = `all-podcast-audios-${Date.now()}.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast.success(t("Download started!"), { id: toastId })
+    } catch (error) {
+      console.error("Download error:", error)
+      toast.error(error instanceof Error ? error.message : t("Failed to download audio files"), { id: toastId })
+    }
+  }, [chapters, audioUrls, t])
+
+  // Count total audio files
+  const totalAudioCount = useMemo(() => {
+    return chapters.reduce((count, chapter) => {
+      const chapterAudioUrls = audioUrls[chapter.id] || {}
+      return count + Object.keys(chapterAudioUrls).length
+    }, 0)
+  }, [chapters, audioUrls])
+
   const initialNodes = useMemo<Node[]>(() => {
     const nodes: Node[] = []
 
     if (chapters.length > 0) {
-      const centerX = 500
       const startY = 300
-      const chapterSpacing = 450 // Increased spacing between chapters
       const audioSpacing = 220
       const audioYOffset = 250
+      const minSpacing = 50 // Minimum gap between chapter groups
 
-      chapters.forEach((chapter, index) => {
-        const x = centerX + (index - (chapters.length - 1) / 2) * chapterSpacing
+      // First pass: calculate all group widths
+      const groupWidths = chapters.map((chapter) => {
         const chapterAudioUrls = audioUrls[chapter.id] || {}
         const audioCount = Object.keys(chapterAudioUrls).length
-        const audioStartX = x - ((audioCount - 1) * audioSpacing) / 2
+        return Math.max(420, audioCount * audioSpacing + 180)
+      })
+
+      // Calculate positions based on actual widths to prevent overlaps
+      let currentX = 0
+      const groupPositions = groupWidths.map((width, index) => {
+        const x = currentX + width / 2
+        currentX += width + minSpacing
+        return { x, width }
+      })
+
+      // Center all groups around the center point
+      const totalWidth = currentX - minSpacing
+      const centerX = 500
+      const startX = centerX - totalWidth / 2
+
+      chapters.forEach((chapter, index) => {
+        const chapterAudioUrls = audioUrls[chapter.id] || {}
+        const audioCount = Object.keys(chapterAudioUrls).length
         const color = CHAPTER_COLORS[index % CHAPTER_COLORS.length]
         
         // Add chapter group background node
-        const groupWidth = Math.max(300, audioCount * audioSpacing + 100)
-        const groupHeight = audioCount > 0 ? 450 : 220
-        const groupX = x - groupWidth / 2
+        const { width: groupWidth } = groupPositions[index]
+        const groupX = startX + groupPositions[index].x - groupWidth / 2
+        const groupHeight = audioCount > 0 ? 550 : 280
         const groupY = startY - 40
         
         nodes.push({
@@ -668,7 +873,7 @@ export function PodcastFlow({
         
         // Position relative to group parent (parent's 0,0 is its top-left corner)
         const relativeX = groupWidth / 2 - 140 // Center horizontally in group
-        const relativeY = 60
+        const relativeY = 80
         
         nodes.push({
           id: `chapter-${chapter.id}`,
@@ -688,8 +893,8 @@ export function PodcastFlow({
         Object.entries(chapterAudioUrls).forEach(([language, audioUrl], audioIndex) => {
           const audioNodeId = `audio-${chapter.id}-${language}`
           // Position audios relative to group's (0,0) 
-          const audioRelativeX = (groupWidth / 2) - ((audioCount - 1) * audioSpacing) / 2 + audioIndex * audioSpacing - 96 // Center audios in group
-          const audioRelativeY = 310
+          const audioRelativeX = (groupWidth / 2) - ((audioCount - 1) * audioSpacing) / 2 + audioIndex * audioSpacing - 32 // Center audios in group (32 = half of 64px node width)
+          const audioRelativeY = 360
           
           nodes.push({
             id: audioNodeId,
@@ -704,6 +909,7 @@ export function PodcastFlow({
               isSelected: selectedAudioNodes.has(audioNodeId),
               onToggleSelect: toggleAudioSelection,
               nodeId: audioNodeId,
+              chapter,
             },
           })
         })
@@ -739,33 +945,33 @@ export function PodcastFlow({
             target: audioNodeId,
             type: "smoothstep",
             animated: true,
-            style: { stroke: "#10b981", strokeWidth: 2 },
+            style: { stroke: "hsl(150, 50%, 50%)", strokeWidth: 2, strokeDasharray: "4,4" },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: "#10b981",
+              color: "hsl(150, 50%, 50%)",
             },
           })
         })
       })
     }
 
-    // Add edges from audio nodes to merge nodes
-    mergeGroups.forEach((group) => {
-      group.audioNodes.forEach((audioNode) => {
-        edges.push({
-          id: `audio-${audioNode.nodeId}-merge-${group.id}`,
-          source: audioNode.nodeId,
-          target: group.id,
-          type: "smoothstep",
-          animated: true,
-          style: { stroke: "#a855f7", strokeWidth: 2 },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: "#a855f7",
-          },
+      // Add edges from audio nodes to merge nodes
+      mergeGroups.forEach((group) => {
+        group.audioNodes.forEach((audioNode) => {
+          edges.push({
+            id: `audio-${audioNode.nodeId}-merge-${group.id}`,
+            source: audioNode.nodeId,
+            target: group.id,
+            type: "smoothstep",
+            animated: true,
+            style: { stroke: "hsl(150, 50%, 50%)", strokeWidth: 2 },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: "hsl(150, 50%, 50%)",
+            },
+          })
         })
       })
-    })
 
     return edges
   }, [chapters, audioUrls, mergeGroups])
@@ -774,35 +980,51 @@ export function PodcastFlow({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
   useEffect(() => {
-    // Only update nodes when new audio is added, preserving existing node positions
+    // Recalculate positions to prevent overlaps when audio is added
     setNodes((currentNodes) => {
-      const existingNodePositions = new Map(currentNodes.map(n => [n.id, n.position]))
       const newNodes: Node[] = []
 
     if (chapters.length > 0) {
-      const centerX = 500
       const startY = 300
-      const chapterSpacing = 450 // Increased spacing between chapters
       const audioSpacing = 220
       const audioYOffset = 250
+      const minSpacing = 50 // Minimum gap between chapter groups
 
-      chapters.forEach((chapter, index) => {
-        const x = centerX + (index - (chapters.length - 1) / 2) * chapterSpacing
+      // First pass: calculate all group widths
+      const groupWidths = chapters.map((chapter) => {
         const chapterAudioUrls = audioUrls[chapter.id] || {}
         const audioCount = Object.keys(chapterAudioUrls).length
-        const audioStartX = x - ((audioCount - 1) * audioSpacing) / 2
+        return Math.max(420, audioCount * audioSpacing + 180)
+      })
+
+      // Calculate positions based on actual widths to prevent overlaps
+      let currentX = 0
+      const groupPositions = groupWidths.map((width, index) => {
+        const x = currentX + width / 2
+        currentX += width + minSpacing
+        return { x, width }
+      })
+
+      // Center all groups around the center point
+      const totalWidth = currentX - minSpacing
+      const centerX = 500
+      const startX = centerX - totalWidth / 2
+
+      chapters.forEach((chapter, index) => {
+        const chapterAudioUrls = audioUrls[chapter.id] || {}
+        const audioCount = Object.keys(chapterAudioUrls).length
         const color = CHAPTER_COLORS[index % CHAPTER_COLORS.length]
         
         // Add chapter group background node
-        const groupWidth = Math.max(320, audioCount * audioSpacing + 120)
-        const groupHeight = audioCount > 0 ? 480 : 250
-        const groupX = x - groupWidth / 2
+        const { width: groupWidth } = groupPositions[index]
+        const groupX = startX + groupPositions[index].x - groupWidth / 2
+        const groupHeight = audioCount > 0 ? 550 : 280
         const groupY = startY - 60
         
         newNodes.push({
           id: `group-${chapter.id}`,
           type: "chapterGroup",
-          position: existingNodePositions.get(`group-${chapter.id}`) || { x: groupX, y: groupY },
+          position: { x: groupX, y: groupY },
           style: { width: groupWidth, height: groupHeight },
           data: {
             chapterNumber: index + 1,
@@ -814,12 +1036,12 @@ export function PodcastFlow({
         
         // Position relative to group parent (parent's 0,0 is its top-left corner)
         const relativeX = groupWidth / 2 - 140 // Center horizontally in group
-        const relativeY = 60
+        const relativeY = 80
         
         newNodes.push({
           id: `chapter-${chapter.id}`,
           type: "chapter",
-          position: existingNodePositions.get(`chapter-${chapter.id}`) || { x: relativeX, y: relativeY },
+          position: { x: relativeX, y: relativeY },
           parentId: `group-${chapter.id}`,
           extent: "parent",
           data: {
@@ -834,13 +1056,13 @@ export function PodcastFlow({
         Object.entries(chapterAudioUrls).forEach(([language, audioUrl], audioIndex) => {
           const audioNodeId = `audio-${chapter.id}-${language}`
           // Position audios relative to group's (0,0) 
-          const audioRelativeX = (groupWidth / 2) - ((audioCount - 1) * audioSpacing) / 2 + audioIndex * audioSpacing - 96 // Center audios in group
-          const audioRelativeY = 310
+          const audioRelativeX = (groupWidth / 2) - ((audioCount - 1) * audioSpacing) / 2 + audioIndex * audioSpacing - 32 // Center audios in group (32 = half of 64px node width)
+          const audioRelativeY = 360
           
           newNodes.push({
             id: audioNodeId,
             type: "audio",
-            position: existingNodePositions.get(audioNodeId) || { x: audioRelativeX, y: audioRelativeY },
+            position: { x: audioRelativeX, y: audioRelativeY },
             parentId: `group-${chapter.id}`,
             extent: "parent",
             data: { 
@@ -850,6 +1072,7 @@ export function PodcastFlow({
               isSelected: selectedAudioNodes.has(audioNodeId),
               onToggleSelect: toggleAudioSelection,
               nodeId: audioNodeId,
+              chapter,
             },
           })
         })
@@ -862,7 +1085,7 @@ export function PodcastFlow({
         newNodes.push({
           id: group.id,
           type: "merge",
-          position: existingNodePositions.get(group.id) || { x: mergeX, y: mergeY },
+          position: { x: mergeX, y: mergeY },
           data: { group, onRemoveGroup: removeMergeGroup, audioUrls },
         })
       })
@@ -886,10 +1109,10 @@ export function PodcastFlow({
             target: audioNodeId,
             type: "smoothstep",
             animated: true,
-            style: { stroke: "#10b981", strokeWidth: 2 },
+            style: { stroke: "hsl(150, 50%, 50%)", strokeWidth: 2, strokeDasharray: "4,4" },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: "#10b981",
+              color: "hsl(150, 50%, 50%)",
             },
           })
         })
@@ -904,10 +1127,10 @@ export function PodcastFlow({
             target: group.id,
             type: "smoothstep",
             animated: true,
-            style: { stroke: "#a855f7", strokeWidth: 2 },
+            style: { stroke: "hsl(150, 50%, 50%)", strokeWidth: 2 },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: "#a855f7",
+              color: "hsl(150, 50%, 50%)",
             },
           })
         })
@@ -942,33 +1165,35 @@ export function PodcastFlow({
   return (
     <div className="w-full h-full relative">
       {/* App Logo and Title - Top Left */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-3 bg-background/95 backdrop-blur px-4 py-3 rounded-lg shadow-lg border-2">
-        <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg">
-          <Podcast className="h-6 w-6 text-white" />
+      <div className="absolute top-4 left-4 z-10 flex items-center gap-2.5">
+        <div className="p-1.5 rounded-md bg-muted/50 border border-border">
+          <Podcast className="h-4 w-4 text-foreground" />
         </div>
         <div className="flex flex-col">
-          <h1 className="text-lg font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+          <h1 className="text-sm font-semibold text-foreground leading-tight">
             {t("Podcastify")}
           </h1>
-          <p className="text-xs text-muted-foreground">{t("Blog to Podcast Converter")}</p>
+          <p className="text-xs text-muted-foreground leading-tight">{t("Blog to Podcast Converter")}</p>
         </div>
       </div>
       
       {/* Legend - Below Logo with spacing */}
-      <div className="absolute top-24 left-4 z-10 bg-background/95 backdrop-blur px-4 py-3 rounded-lg shadow-lg border-2">
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-bold text-muted-foreground mb-1">{t("LEGEND")}</p>
+      <div className="absolute top-16 left-4 z-10">
+        <div className="flex flex-col gap-1.5">
+          <p className="text-xs font-medium text-muted-foreground mb-0.5">{t("LEGEND")}</p>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-blue-300 border-2 border-blue-500" />
-            <p className="text-xs">{t("Chapter Node")}</p>
+            <div className="w-2.5 h-2.5 rounded-full bg-foreground/80" />
+            <p className="text-xs text-muted-foreground">{t("Chapter Node")}</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-primary/20 border-2 border-primary" />
-            <p className="text-xs">{t("Audio Node")}</p>
+            <div className="w-4 h-4 rounded-full border border-border bg-card shadow-sm flex items-center justify-center">
+              <div className="w-2 h-2 bg-muted rounded border border-border" />
+            </div>
+            <p className="text-xs text-muted-foreground">{t("Audio Node")}</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-purple-300 border-2 border-purple-500" />
-            <p className="text-xs">{t("Merge Group")}</p>
+            <div className="w-2.5 h-2.5 rounded-full bg-green-500/40" />
+            <p className="text-xs text-muted-foreground">{t("Merge Group")}</p>
           </div>
         </div>
       </div>
@@ -976,6 +1201,31 @@ export function PodcastFlow({
       {/* Language Switcher - Top Right */}
       <div className="absolute top-4 right-4 z-10">
         <LanguageSwitcher />
+      </div>
+
+      {/* Top Center Buttons */}
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 flex items-center gap-2">
+        {onStartNew && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={onStartNew}
+            className="h-8 w-8 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        )}
+        {totalAudioCount > 0 && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={downloadAllAudios}
+            className="h-8 w-8 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+            title={t("Download all audio files")}
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       
       {selectedAudioNodes.size > 0 && (
@@ -1036,8 +1286,6 @@ export function PodcastFlow({
         elementsSelectable={true}
       >
         <Background />
-        <Controls />
-        <MiniMap />
       </ReactFlow>
     </div>
   )

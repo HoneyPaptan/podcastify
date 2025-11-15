@@ -1,5 +1,6 @@
 interface CachedChapters {
   url: string
+  chapterCount: number
   chapters: any[]
   timestamp: number
 }
@@ -26,13 +27,13 @@ const CACHE_KEYS = {
   CURRENT_SESSION: "podcastify_current_session",
 }
 
-export function getCachedChapters(url: string): any[] | null {
+export function getCachedChapters(url: string, chapterCount: number): any[] | null {
   try {
     const cached = localStorage.getItem(CACHE_KEYS.CHAPTERS)
     if (!cached) return null
 
     const data: CachedChapters = JSON.parse(cached)
-    if (data.url === url && Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+    if (data.url === url && data.chapterCount === chapterCount && Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
       return data.chapters
     }
     return null
@@ -41,10 +42,11 @@ export function getCachedChapters(url: string): any[] | null {
   }
 }
 
-export function setCachedChapters(url: string, chapters: any[]): void {
+export function setCachedChapters(url: string, chapterCount: number, chapters: any[]): void {
   try {
     const data: CachedChapters = {
       url,
+      chapterCount,
       chapters,
       timestamp: Date.now(),
     }

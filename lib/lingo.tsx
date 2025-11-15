@@ -68,6 +68,13 @@ const UI_KEYS = [
   "Please enter a valid URL",
   "Invalid URL format",
   "An error occurred",
+  "AI-Powered Podcast Generation",
+  "Multilingual",
+  "Support for 18+ languages",
+  "Fast",
+  "Generate in seconds",
+  "High Quality",
+  "Studio-grade audio",
   
   // Canvas UI
   "Podcastify",

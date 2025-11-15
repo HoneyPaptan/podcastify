@@ -13,61 +13,58 @@ import {
 import { Globe, Check } from "lucide-react"
 
 const languages = [
-  { code: "en", name: "English", flag: "🇺🇸" },
-  { code: "es", name: "Español", flag: "🇪🇸" },
-  { code: "fr", name: "Français", flag: "🇫🇷" },
-  { code: "de", name: "Deutsch", flag: "🇩🇪" },
-  { code: "it", name: "Italiano", flag: "🇮🇹" },
-  { code: "pt", name: "Português", flag: "🇵🇹" },
-  { code: "nl", name: "Nederlands", flag: "🇳🇱" },
-  { code: "pl", name: "Polski", flag: "🇵🇱" },
-  { code: "ru", name: "Русский", flag: "🇷🇺" },
-  { code: "ja", name: "日本語", flag: "🇯🇵" },
-  { code: "ko", name: "한국어", flag: "🇰🇷" },
-  { code: "zh", name: "中文", flag: "🇨🇳" },
-  { code: "ar", name: "العربية", flag: "🇸🇦" },
-  { code: "hi", name: "हिन्दी", flag: "🇮🇳" },
-  { code: "tr", name: "Türkçe", flag: "🇹🇷" },
-  { code: "sv", name: "Svenska", flag: "🇸🇪" },
-  { code: "no", name: "Norsk", flag: "🇳🇴" },
-  { code: "da", name: "Dansk", flag: "🇩🇰" },
-  { code: "fi", name: "Suomi", flag: "🇫🇮" },
+  { code: "en", name: "English" },
+  { code: "es", name: "Español" },
+  { code: "fr", name: "Français" },
+  { code: "de", name: "Deutsch" },
+  { code: "it", name: "Italiano" },
+  { code: "pt", name: "Português" },
+  { code: "nl", name: "Nederlands" },
+  { code: "pl", name: "Polski" },
+  { code: "ru", name: "Русский" },
+  { code: "ja", name: "日本語" },
+  { code: "ko", name: "한국어" },
+  { code: "zh", name: "中文" },
+  { code: "ar", name: "العربية" },
+  { code: "hi", name: "हिन्दी" },
+  { code: "tr", name: "Türkçe" },
+  { code: "sv", name: "Svenska" },
+  { code: "no", name: "Norsk" },
+  { code: "da", name: "Dansk" },
+  { code: "fi", name: "Suomi" },
 ]
 
 export function LanguageSwitcher() {
   const { locale, setLocale, isLoading } = useLingo()
-  const currentLanguage = languages.find((l) => l.code === locale)
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button 
-          variant="outline" 
+          variant="ghost" 
           size="sm" 
-          className="gap-2 min-w-[120px]"
+          className="h-8 min-w-8 px-2"
           disabled={isLoading}
         >
           <Globe className="h-4 w-4" />
-          <span className="text-lg">{currentLanguage?.flag || "🌐"}</span>
-          <span className="hidden sm:inline text-xs">{currentLanguage?.name || "Language"}</span>
+          <span className="sr-only">Select language</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56 max-h-[400px] overflow-y-auto">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          Select Language
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel className="text-xs text-muted-foreground px-2 py-1.5">
+          Language
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {languages.map((language) => (
           <DropdownMenuItem
             key={language.code}
             onClick={() => setLocale(language.code)}
-            className="gap-2 cursor-pointer"
+            className="cursor-pointer px-2 py-1.5"
             disabled={isLoading}
           >
-            <span className="text-lg">{language.flag}</span>
-            <span className="flex-1">{language.name}</span>
+            <span className="flex-1 text-sm">{language.name}</span>
             {locale === language.code && (
-              <Check className="h-4 w-4 text-primary" />
+              <Check className="h-3.5 w-3.5 text-primary ml-2" />
             )}
           </DropdownMenuItem>
         ))}

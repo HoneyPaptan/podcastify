@@ -3,15 +3,31 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useLingo } from "@/lib/lingo"
 import { LanguageSwitcher } from "@/components/language-switcher"
+import { ThemeToggle } from "@/components/theme-toggle"
+import LightRays from "@/components/LightRays"
+import PrismaticBurst from "@/components/PrismaticBurst"
+import { LoadingScreen } from "@/components/loading-screen"
 import { ProcessingStatus } from "@/components/processing-status"
 import { ChapterCard } from "@/components/chapter-card"
 import { PodcastFlow } from "@/components/podcast-flow"
 import { JobsViewer } from "@/components/jobs-viewer"
-import { Loader2, Link as LinkIcon } from "lucide-react"
+import { Loader2, Link as LinkIcon, Sparkles, ArrowRight } from "lucide-react"
 import { toast } from "sonner"
 import {
   getCachedChapters,
@@ -56,6 +72,7 @@ export default function Home() {
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [translations, setTranslations] = useState<Record<string, Record<string, ChapterTranslation>>>({})
   const [audioUrlsState, setAudioUrlsState] = useState<Record<string, Record<string, string>>>({})
+  const [chapterCount, setChapterCount] = useState("3")
   const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`)
   const [steps, setSteps] = useState<ProcessingStep[]>([
     { id: "scrape", label: "Scraping blog content", status: "pending" },
@@ -96,6 +113,7 @@ export default function Home() {
     setTranslations({})
     setAudioUrlsState({})
     setError(null)
+    setChapterCount("3")
     setSteps([
       { id: "scrape", label: "Scraping blog content", status: "pending" },
       { id: "chapters", label: "Generating chapters", status: "pending" },
@@ -273,10 +291,11 @@ export default function Home() {
     }
 
     const normalizedUrl = url.trim().toLowerCase()
-    const cachedChapters = getCachedChapters(normalizedUrl)
+    const numChapters = parseInt(chapterCount) || 3
+    const cachedChapters = getCachedChapters(normalizedUrl, numChapters)
     
     if (cachedChapters && cachedChapters.length > 0) {
-      console.log(`[Cache] Using cached chapters for ${normalizedUrl}`)
+      console.log(`[Cache] Using cached chapters for ${normalizedUrl} with ${numChapters} chapters`)
       setChapters(cachedChapters)
       const chapterIds = cachedChapters.map((ch: Chapter) => ch.id)
       setTranslations(getAllCachedTranslations(chapterIds))
@@ -290,7 +309,7 @@ export default function Home() {
     setSteps([
       { id: "scrape", label: "Scraping blog content", status: "pending" },
       { id: "chapters", label: "Generating chapters", status: "pending" },
-      { id: "summarize", label: "Summarizing to 3 chapters", status: "pending" },
+      { id: "summarize", label: `Summarizing to ${numChapters} chapters`, status: "pending" },
     ])
 
     try {
@@ -301,7 +320,6 @@ export default function Home() {
 
       console.log("[Step 1/3] Starting scrape...")
       updateStep("scrape", "processing")
-      toast.loading("Scraping blog content...", { id: "scrape" })
       const response = await fetch("/api/scrape", {
         method: "POST",
         headers: {
@@ -320,11 +338,9 @@ export default function Home() {
       const scrapedData = await response.json()
       console.log("[Step 1/3] Scrape completed:", scrapedData)
       updateStep("scrape", "completed")
-      toast.success("Blog content scraped", { id: "scrape" })
 
       console.log("[Step 2/3] Starting chapter generation...")
       updateStep("chapters", "processing")
-      toast.loading("Generating chapters...", { id: "chapters" })
       const chaptersResponse = await fetch("/api/chapters", {
         method: "POST",
         headers: {
@@ -347,11 +363,9 @@ export default function Home() {
       console.log("[Step 2/3] Chapters generated:", chaptersData)
       console.log(`[Step 2/3] Total chapters: ${chaptersData.totalChapters}, Total words: ${chaptersData.totalWords}`)
       updateStep("chapters", "completed")
-      toast.success("Chapters generated", { id: "chapters" })
 
       console.log("[Step 3/3] Starting summarization...")
       updateStep("summarize", "processing")
-      toast.loading("Summarizing to 3 chapters...", { id: "summarize" })
       
       const summarizeResponse = await fetch("/api/summarize-chapters", {
         method: "POST",
@@ -360,7 +374,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           chapters: chaptersData.chapters,
-          targetChapters: 3,
+          targetChapters: parseInt(chapterCount) || 3,
         }),
       })
 
@@ -377,9 +391,8 @@ export default function Home() {
       console.log(`[Step 3/3] Reduced from ${summarizedData.originalChapters} to ${summarizedData.totalChapters} chapters`)
       console.log(`[Step 3/3] Word count: ${summarizedData.originalWords} → ${summarizedData.totalWords}`)
       updateStep("summarize", "completed")
-      toast.success("Podcast ready!", { id: "summarize" })
 
-      setCachedChapters(normalizedUrl, summarizedData.chapters)
+      setCachedChapters(normalizedUrl, numChapters, summarizedData.chapters)
       setChapters(summarizedData.chapters)
       
       const chapterIds = summarizedData.chapters.map((ch: Chapter) => ch.id)
@@ -399,75 +412,92 @@ export default function Home() {
 
   return (
     <>
-      <div className="absolute top-4 right-4 z-50">
+      <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+        <ThemeToggle />
         <LanguageSwitcher />
       </div>
-      {!isLoading && chapters.length === 0 ? (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted/20 px-4 py-12">
-          <div className="w-full max-w-2xl space-y-8">
-            <div className="space-y-4 text-center">
-              <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-                {t("Multilingual Podcast Generator")}
-              </h1>
-              <p className="text-lg text-muted-foreground sm:text-xl">
-                {t("Turn any blog into a multilingual podcast in seconds")}
-              </p>
-            </div>
+      {isLoading && chapters.length === 0 ? (
+        <div className="relative flex min-h-screen items-center justify-center px-4 py-12 overflow-hidden">
+          {/* Prismatic Burst Background */}
+          <div className="fixed inset-0 z-0 w-full h-full">
+            <PrismaticBurst />
+          </div>
+          <LoadingScreen steps={steps} />
+        </div>
+      ) : !isLoading && chapters.length === 0 && !getCurrentSession() ? (
+        <div className="relative flex min-h-screen items-center justify-center px-4 py-12 overflow-hidden">
+          {/* Light Rays Background */}
+          <div className="fixed inset-0 z-0">
+            <LightRays className="w-full h-full" />
+          </div>
+          <div className="relative z-10 w-full max-w-2xl mx-auto">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Title and Paragraph */}
+              <div className="space-y-2 text-center">
+                <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
+                  {t("Multilingual Podcast Generator")}
+                </h1>
+                <p className="text-sm text-muted-foreground sm:text-base">
+                  {t("Turn any blog into a multilingual podcast in seconds")}
+                </p>
+              </div>
 
-            <Card className="border-2 shadow-lg">
-              <CardHeader className="space-y-2">
-                <CardTitle className="text-2xl">{t("Enter Blog URL")}</CardTitle>
-                <CardDescription>
-                  {t("Paste any blog URL to extract content and generate multilingual podcast audio")}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        type="url"
-                        placeholder={t("https://example.com/blog-post")}
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                        disabled={isLoading}
-                        className="pl-10"
-                      />
+              {/* Input and Submit */}
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1">
+                  <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="url"
+                    placeholder={t("https://example.com/blog-post")}
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    disabled={isLoading}
+                    className="h-12 pl-10 text-base"
+                  />
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <Select value={chapterCount} onValueChange={setChapterCount} disabled={isLoading}>
+                        <SelectTrigger className="h-12 w-20 px-3 py-0 [&[data-size=default]]:!h-12">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                            <SelectItem key={num} value={num.toString()}>
+                              {num}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <Button type="submit" disabled={isLoading} size="lg">
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          {t("Processing...")}
-                        </>
-                      ) : (
-                        t("Generate Podcast")
-                      )}
-                    </Button>
-                  </div>
-                  {error && (
-                    <p className="text-sm text-destructive">{error}</p>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t("Select chapters")}</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Button 
+                  type="submit" 
+                  disabled={isLoading || !url.trim()} 
+                  className="h-12 w-12 p-0 shrink-0"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <ArrowRight className="h-5 w-5" />
                   )}
-                </form>
-              </CardContent>
-            </Card>
+                </Button>
+              </div>
+            </form>
+            {error && (
+              <div className="mt-4 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2">
+                <p className="text-sm font-medium text-destructive">{error}</p>
+              </div>
+            )}
           </div>
         </div>
       ) : (
         <>
-          {/* Start New Button */}
-          <div className="absolute top-4 left-4 z-50">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleStartNew}
-              className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
-            >
-              {t("Start New Podcast")}
-            </Button>
-          </div>
-          
           <div className="fixed inset-0 w-screen h-screen">
             <PodcastFlow
               steps={steps}
@@ -477,6 +507,7 @@ export default function Home() {
               onTranslate={handleTranslateChapter}
               onGenerateAudio={handleGenerateAudio}
               isLoading={isLoading}
+              onStartNew={handleStartNew}
             />
           </div>
         </>

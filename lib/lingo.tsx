@@ -223,98 +223,103 @@ export function LingoProvider({ children }: { children: ReactNode }) {
     setIsLoading(true)
     setCacheHit(false)
     
-    const translateAll = async () => {
-      const startTime = performance.now()
-      
-      try {
-        // Check for component changes and version changes
-        const componentsChanged = hasComponentsChanged(UI_KEYS)
-        const versionChanged = hasTranslationVersionChanged()
+    // Use setTimeout to ensure this runs after client mount, preventing SSR mismatch
+    const timer = setTimeout(() => {
+      const translateAll = async () => {
+        const startTime = performance.now()
         
-        debugLog('Translation checks', { 
-          locale, 
-          componentsChanged, 
-          versionChanged 
-        })
-        
-        // Try to load from cache first
-        const cachedTranslations = getCachedUITranslations(locale)
-        
-        if (cachedTranslations && !componentsChanged && !versionChanged) {
-          debugLog('Loading translations from cache', { 
+        try {
+          // Check for component changes and version changes
+          const componentsChanged = hasComponentsChanged(UI_KEYS)
+          const versionChanged = hasTranslationVersionChanged()
+          
+          debugLog('Translation checks', { 
             locale, 
-            keyCount: cachedTranslations.keyCount 
+            componentsChanged, 
+            versionChanged 
           })
           
-          setTranslations(cachedTranslations.translations)
-          setCacheHit(true)
-          setIsLoading(false)
+          // Try to load from cache first
+          const cachedTranslations = getCachedUITranslations(locale)
           
-          logPerformance('Cache hit', performance.now() - startTime)
-          return
-        }
-        
-        // Cache miss or invalid - need API call
-        debugLog('Cache miss or invalid, fetching from API', { 
-          locale,
-          cachedTranslations: !!cachedTranslations,
-          componentsChanged,
-          versionChanged
-        })
-        
-        const translatedTexts = await translateBatch(UI_KEYS, locale, "en")
-        const translated: Record<string, string> = {}
-        
-        UI_KEYS.forEach((key, index) => {
-          translated[key] = translatedTexts[index] || key
-        })
-        
-        // Save to cache with component hashes
-        const componentHashes = {
-          ui_keys: generateComponentHash(UI_KEYS),
-          version: TRANSLATION_CONFIG.TRANSLATION_VERSION
-        }
-        
-        setCachedUITranslations(locale, translated, componentHashes, TRANSLATION_CONFIG.TRANSLATION_VERSION)
-        updateComponentHash(UI_KEYS)
-        updateTranslationVersion()
-        
-        setTranslations(translated)
-        setCacheHit(false)
-        
-        logPerformance('API translation', performance.now() - startTime)
-        
-      } catch (error) {
-        console.warn("Translation failed, attempting fallback:", error)
-        
-        // Try to use stale cache if available
-        const staleCache = getCachedUITranslations(locale)
-        if (staleCache && TRANSLATION_CONFIG.FALLBACK_TO_API) {
-          debugLog('Using stale cache as fallback', { locale })
-          setTranslations(staleCache.translations)
-          setCacheHit(true) // Mark as hit since we're using cache
-        } else {
-          // Final fallback to individual translations
+          if (cachedTranslations && !componentsChanged && !versionChanged) {
+            debugLog('Loading translations from cache', { 
+              locale, 
+              keyCount: cachedTranslations.keyCount 
+            })
+            
+            setTranslations(cachedTranslations.translations)
+            setCacheHit(true)
+            setIsLoading(false)
+            
+            logPerformance('Cache hit', performance.now() - startTime)
+            return
+          }
+          
+          // Cache miss or invalid - need API call
+          debugLog('Cache miss or invalid, fetching from API', { 
+            locale,
+            cachedTranslations: !!cachedTranslations,
+            componentsChanged,
+            versionChanged
+          })
+          
+          const translatedTexts = await translateBatch(UI_KEYS, locale, "en")
           const translated: Record<string, string> = {}
           
-          for (const key of UI_KEYS) {
-            try {
-              const translatedText = await translateText(key, locale, "en")
-              translated[key] = translatedText
-            } catch (error) {
-              translated[key] = key
-            }
+          UI_KEYS.forEach((key, index) => {
+            translated[key] = translatedTexts[index] || key
+          })
+          
+          // Save to cache with component hashes
+          const componentHashes = {
+            ui_keys: generateComponentHash(UI_KEYS),
+            version: TRANSLATION_CONFIG.TRANSLATION_VERSION
           }
+          
+          setCachedUITranslations(locale, translated, componentHashes, TRANSLATION_CONFIG.TRANSLATION_VERSION)
+          updateComponentHash(UI_KEYS)
+          updateTranslationVersion()
           
           setTranslations(translated)
           setCacheHit(false)
+          
+          logPerformance('API translation', performance.now() - startTime)
+          
+        } catch (error) {
+          console.warn("Translation failed, attempting fallback:", error)
+          
+          // Try to use stale cache if available
+          const staleCache = getCachedUITranslations(locale)
+          if (staleCache && TRANSLATION_CONFIG.FALLBACK_TO_API) {
+            debugLog('Using stale cache as fallback', { locale })
+            setTranslations(staleCache.translations)
+            setCacheHit(true) // Mark as hit since we're using cache
+          } else {
+            // Final fallback to individual translations
+            const translated: Record<string, string> = {}
+            
+            for (const key of UI_KEYS) {
+              try {
+                const translatedText = await translateText(key, locale, "en")
+                translated[key] = translatedText
+              } catch (error) {
+                translated[key] = key
+              }
+            }
+            
+            setTranslations(translated)
+            setCacheHit(false)
+          }
         }
+        
+        setIsLoading(false)
       }
-      
-      setIsLoading(false)
-    }
 
-    translateAll()
+      translateAll()
+    }, 0) // Minimal timeout to ensure client-side execution
+
+    return () => clearTimeout(timer)
   }, [locale, mounted])
 
 const t = useCallback((key: string, params?: Record<string, string>): string => {

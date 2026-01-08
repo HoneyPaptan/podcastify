@@ -56,7 +56,8 @@ export function setComponentHashes(hashes: Record<string, string>): void {
  * Check if UI components have changed since last cache
  */
 export function hasComponentsChanged(currentUIKeys: string[]): boolean {
-  if (!TRANSLATION_CONFIG.AUTO_INVALIDATION) {
+  // Only run on client side to prevent SSR mismatches
+  if (typeof window === 'undefined' || !TRANSLATION_CONFIG.AUTO_INVALIDATION) {
     return false
   }
 
@@ -134,6 +135,11 @@ export function updateTranslationVersion(): void {
  * Check if translation version has changed
  */
 export function hasTranslationVersionChanged(): boolean {
+  // Only run on client side to prevent SSR mismatches
+  if (typeof window === 'undefined') {
+    return false
+  }
+
   const currentVersion = getCurrentTranslationVersion()
   const storedVersion = getStoredTranslationVersion()
   

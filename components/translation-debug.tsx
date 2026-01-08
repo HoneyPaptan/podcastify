@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useLingo } from "@/lib/lingo"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,6 +11,12 @@ import { Trash2, RefreshCw, Database } from "lucide-react"
 export function TranslationDebug() {
   const { t, locale, isLoading, cacheHit, clearCache } = useLingo()
   const [lastAction, setLastAction] = useState<string>("")
+  const [mounted, setMounted] = useState(false)
+
+  // Prevent hydration issues
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const handleClearCache = () => {
     clearCache()
@@ -25,6 +31,11 @@ export function TranslationDebug() {
   const handleForceReTranslation = () => {
     clearCache()
     setLastAction(`Forced re-translation for ${locale}`)
+  }
+
+  // Don't render until mounted to prevent SSR hydration issues
+  if (!mounted) {
+    return null
   }
 
   return (

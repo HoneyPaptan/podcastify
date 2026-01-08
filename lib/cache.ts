@@ -259,6 +259,11 @@ interface CachedUITranslation {
 }
 
 export function getCachedUITranslations(locale: string): CachedUITranslation | null {
+  // Only access localStorage on client side
+  if (typeof window === 'undefined') {
+    return null
+  }
+
   try {
     const cached = localStorage.getItem(CACHE_KEYS.UI_TRANSLATIONS)
     if (!cached) return null
@@ -296,6 +301,11 @@ export function setCachedUITranslations(
   componentHashes: Record<string, string>,
   version: string
 ): void {
+  // Only access localStorage on client side
+  if (typeof window === 'undefined') {
+    return
+  }
+
   try {
     const cached = localStorage.getItem(CACHE_KEYS.UI_TRANSLATIONS)
     const allTranslations: Record<string, CachedUITranslation> = cached ? JSON.parse(cached) : {}

@@ -26,7 +26,6 @@ import { LoadingScreen } from "@/components/loading-screen"
 import { ProcessingStatus } from "@/components/processing-status"
 import { ChapterCard } from "@/components/chapter-card"
 import { PodcastFlow } from "@/components/podcast-flow"
-import { TranslationDebug } from "@/components/translation-debug"
 import { Loader2, Link as LinkIcon, Sparkles, ArrowRight } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -79,9 +78,13 @@ export default function Home() {
     { id: "chapters", label: "Generating chapters", status: "pending" },
     { id: "summarize", label: "Summarizing to 3 chapters", status: "pending" },
   ])
+  const [mounted, setMounted] = useState(false)
 
-  // Restore session on mount
+  // Mark as mounted after hydration to prevent hydration mismatch
   useEffect(() => {
+    setMounted(true)
+    
+    // Restore session only after hydration
     const session = getCurrentSession()
     if (session) {
       console.log("[Session] Restoring previous session:", session.url)
@@ -424,7 +427,7 @@ export default function Home() {
           </div>
           <LoadingScreen steps={steps} />
         </div>
-      ) : !isLoading && chapters.length === 0 && !getCurrentSession() ? (
+      ) : !isLoading && chapters.length === 0 ? (
         <div className="relative flex min-h-screen items-center justify-center px-4 py-12 overflow-hidden">
           {/* Light Rays Background */}
           <div className="fixed inset-0 z-0">
@@ -509,7 +512,6 @@ export default function Home() {
               isLoading={isLoading}
               onStartNew={handleStartNew}
             />
-            {process.env.NODE_ENV === 'development' && <TranslationDebug />}
           </div>
         </>
       )}

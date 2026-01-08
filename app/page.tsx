@@ -26,7 +26,6 @@ import { LoadingScreen } from "@/components/loading-screen"
 import { ProcessingStatus } from "@/components/processing-status"
 import { ChapterCard } from "@/components/chapter-card"
 import { PodcastFlow } from "@/components/podcast-flow"
-import { JobsViewer } from "@/components/jobs-viewer"
 import { Loader2, Link as LinkIcon, Sparkles, ArrowRight } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -512,9 +511,6 @@ export default function Home() {
           </div>
         </>
       )}
-      
-      {/* Background Jobs Viewer */}
-      {chapters.length > 0 && <JobsViewer sessionId={sessionId} />}
     </>
   )
 }

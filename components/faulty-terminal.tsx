@@ -2,7 +2,6 @@
 
 import { Renderer, Program, Mesh, Color, Triangle } from 'ogl'
 import { useEffect, useRef, useMemo, useCallback } from 'react'
-import './FaultyTerminal.css'
 
 const vertexShader = `
 attribute vec2 position;
@@ -421,6 +420,6 @@ export default function FaultyTerminal({
     handleMouseMove
   ])
 
-  return <div ref={containerRef} className={`faulty-terminal-container ${className}`} style={style} {...rest} />
+  return <div ref={containerRef} className={className} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', ...style }} {...rest} />
 }
 

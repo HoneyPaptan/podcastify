@@ -1,6 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
 import { Renderer, Program, Triangle, Mesh } from 'ogl';
-import './LightRays.css';
 
 export type RaysOrigin =
   | 'top-center'

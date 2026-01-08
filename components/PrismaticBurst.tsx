@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import { Renderer, Program, Mesh, Triangle, Texture } from 'ogl';
-import './PrismaticBurst.css';
 
 type Offset = { x?: number | string; y?: number | string };
 type AnimationType = 'rotate' | 'rotate3d' | 'hover';

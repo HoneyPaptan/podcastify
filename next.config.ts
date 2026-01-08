@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  turbopack: {},
+  // turbopack: {}, // Disabled to fix PostCSS build issue
   serverExternalPackages: ["jsdom", "lingo.dev"],
   experimental: {
     serverActions: {

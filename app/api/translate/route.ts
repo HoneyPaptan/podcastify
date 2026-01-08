@@ -16,6 +16,8 @@ async function initializeLingo() {
     
     lingoEngine = new LingoDotDevEngine({
       apiKey: apiKey,
+      batchSize: 250, // Maximum allowed for optimal performance
+      idealBatchItemSize: 2500, // Maximum allowed for optimal performance
     })
     
     return lingoEngine
@@ -62,20 +64,95 @@ async function translateText(text: string, targetLocale: string, sourceLocale: s
   }
 }
 
+async function translateBatch(texts: string[], targetLocale: string, sourceLocale: string = "en"): Promise<string[]> {
+  if (targetLocale === sourceLocale) {
+    return texts
+  }
+  
+  if (!lingoEngine) {
+    await initializeLingo()
+  }
+  
+  if (!lingoEngine) {
+    return texts
+  }
+  
+  try {
+    // Create an object with indices to preserve order
+    const textObject: Record<string, string> = {}
+    texts.forEach((text, index) => {
+      textObject[index.toString()] = text
+    })
+    
+    const translatedObject = await lingoEngine.localizeObject(textObject, {
+      sourceLocale: sourceLocale,
+      targetLocale: targetLocale,
+    })
+    
+    // Convert back to array preserving order
+    const results: string[] = []
+    texts.forEach((_, index) => {
+      const translated = translatedObject[index.toString()]
+      results[index] = translated || texts[index]
+      
+      // Cache each result
+      const cacheKey = `${sourceLocale}-${targetLocale}-${texts[index]}`
+      if (translated && translated !== texts[index]) {
+        translationCache.set(cacheKey, translated)
+      }
+    })
+    
+    return results
+  } catch (error) {
+    console.error("Batch translation error:", error)
+    // Fallback to individual translations
+    const results: string[] = []
+    for (const text of texts) {
+      try {
+        const translated = await translateText(text, targetLocale, sourceLocale)
+        results.push(translated)
+      } catch (e) {
+        results.push(text)
+      }
+    }
+    return results
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { text, targetLocale, sourceLocale = "en" } = body
+    const { text, texts, targetLocale, sourceLocale = "en" } = body
     
-    if (!text || !targetLocale) {
+    if (!targetLocale) {
       return NextResponse.json(
-        { error: "Missing required fields: text, targetLocale" },
+        { error: "Missing required field: targetLocale" },
+        { status: 400 }
+      )
+    }
+    
+    // Handle batch translation
+    if (texts && Array.isArray(texts)) {
+      if (texts.length === 0) {
+        return NextResponse.json(
+          { error: "Texts array cannot be empty" },
+          { status: 400 }
+        )
+      }
+      
+      const translated = await translateBatch(texts, targetLocale, sourceLocale)
+      return NextResponse.json({ translated })
+    }
+    
+    // Handle single text translation (backward compatibility)
+    if (!text) {
+      return NextResponse.json(
+        { error: "Missing required field: text (or provide texts array for batch translation)" },
         { status: 400 }
       )
     }
     
     const translated = await translateText(text, targetLocale, sourceLocale)
-    
     return NextResponse.json({ translated })
   } catch (error) {
     console.error("Translation API error:", error)

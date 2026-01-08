@@ -16,10 +16,11 @@ Podcastify is a modern web application that transforms blog posts into multiling
 - **Sonner** - Toast notifications
 
 ### Backend & Processing
-- **Inngest** - Background job processing for audio generation
+- **Inngest** - Background job processing for audio generation (integrated with Vercel)
 - **Mozilla Readability** - Content extraction from web pages
-- **OpenRouter** - AI-powered content summarization and translation
-- **Text-to-Speech API** - Audio generation from text
+- **OpenRouter** - AI-powered content summarization
+- **Google Gemini** - Text-to-Speech API for audio generation
+- **Lingo.dev** - AI-powered translation service
 
 ### Utilities
 - **JSZip** - Creating zip archives for audio downloads
@@ -49,7 +50,6 @@ podcastify/
 │   ├── podcast-flow.tsx        # Main canvas component
 │   ├── chapter-card.tsx        # Chapter display card
 │   ├── loading-screen.tsx      # Loading states
-│   ├── jobs-viewer.tsx         # Background jobs viewer
 │   ├── language-switcher.tsx   # Language selection
 │   ├── theme-toggle.tsx        # Dark/light theme toggle
 │   ├── translation-loader.tsx # i18n loader
@@ -80,7 +80,9 @@ podcastify/
 - Node.js 18+ installed
 - npm, yarn, pnpm, or bun package manager
 - OpenRouter API key (for AI features)
-- Text-to-Speech API access (configure in environment)
+- Google Gemini API key (for Text-to-Speech)
+- Lingo.dev API key (for translation)
+- Inngest account (for background job processing)
 
 ### Installation
 
@@ -102,13 +104,30 @@ podcastify/
 3. **Set up environment variables**
    Create a `.env.local` file in the root directory:
    ```env
-   OPENAI_API_KEY=your_openai_api_key
-   TTS_API_KEY=your_tts_api_key
-   INNGEST_EVENT_KEY=your_inngest_key
-   INNGEST_SIGNING_KEY=your_inngest_signing_key
+   # API Keys
+   OPENROUTER_API_KEY=your_openrouter_api_key
+   GEMINI_API_KEY=your_gemini_api_key
+   LINGO_API_KEY=your_lingo_api_key
+   
+   # Inngest (for local development)
+   INNGEST_EVENT_KEY=your_inngest_event_key
    ```
 
-4. **Run the development server**
+4. **Set up Inngest for local development**
+   
+   In a separate terminal, start the Inngest Dev Server:
+   ```bash
+   npx inngest-cli@latest dev
+   ```
+   
+   This will:
+   - Start the Inngest Dev Server (usually on `http://localhost:8288`)
+   - Display an Event Key in the terminal
+   - Copy the Event Key and add it to your `.env.local` as `INNGEST_EVENT_KEY`
+   
+   **Keep this terminal running** while developing.
+
+5. **Run the development server**
    ```bash
    npm run dev
    # or
@@ -117,7 +136,7 @@ podcastify/
    pnpm dev
    ```
 
-5. **Open your browser**
+6. **Open your browser**
    Navigate to `http://localhost:3000` (or the port shown in terminal)
 
 ### Build for Production
@@ -126,6 +145,44 @@ podcastify/
 npm run build
 npm start
 ```
+
+## Production Deployment
+
+### Deploy to Vercel
+
+1. **Install Inngest Vercel Integration**
+   - Go to [vercel.com/integrations](https://vercel.com/integrations)
+   - Search for "Inngest" and install the integration
+   - This automatically sets `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` environment variables
+
+2. **Add Environment Variables in Vercel**
+   
+   In your Vercel project settings, add:
+   ```env
+   OPENROUTER_API_KEY=your_openrouter_api_key
+   GEMINI_API_KEY=your_gemini_api_key
+   LINGO_API_KEY=your_lingo_api_key
+   NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
+   ```
+   
+   **Note:** `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` are automatically set by the Vercel Inngest integration - you don't need to add them manually.
+
+3. **Deploy**
+   - Push your code to your Git repository
+   - Vercel will automatically deploy
+   - Your Inngest functions will appear in the Inngest dashboard automatically
+
+### Environment Variables Reference
+
+| Variable | Required | Description | Auto-set by |
+|----------|----------|-------------|-------------|
+| `OPENROUTER_API_KEY` | Yes | OpenRouter API key for AI summarization | - |
+| `GEMINI_API_KEY` | Yes | Google Gemini API key for Text-to-Speech | - |
+| `LINGO_API_KEY` | Yes | Lingo.dev API key for translation | - |
+| `INNGEST_EVENT_KEY` | Yes | Inngest event key | Vercel Integration (prod) / Dev Server (local) |
+| `INNGEST_SIGNING_KEY` | Yes | Inngest signing key | Vercel Integration (prod only) |
+| `NEXT_PUBLIC_APP_URL` | Yes | Your app URL (for production) | - |
+| `OPENROUTER_REFERER_URL` | Optional | Referer URL for OpenRouter | Defaults to `NEXT_PUBLIC_APP_URL` |
 
 ## Current Features
 
@@ -174,7 +231,7 @@ npm start
   - Animated gradient borders during audio generation
   - Loading states and progress indicators
   - Toast notifications for user actions
-- **Job Tracking** - View and monitor background audio generation jobs
+- **Background Processing** - Audio generation runs in the background via Inngest for better performance
 
 ## Future Scope
 

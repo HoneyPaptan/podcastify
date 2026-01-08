@@ -22,6 +22,8 @@ async function initializeLingo() {
     
     lingoEngine = new LingoDotDevEngine({
       apiKey: apiKey,
+      batchSize: 250, // Maximum allowed for optimal performance
+      idealBatchItemSize: 2500, // Maximum allowed for optimal performance
     })
     
     return lingoEngine
@@ -68,6 +70,58 @@ async function translateWithLingo(text: string, targetLocale: string, sourceLoca
   }
 }
 
+async function translateChapterObject(chapter: any, targetLocale: string, sourceLocale: string = "en"): Promise<{title: string, textContent: string}> {
+  if (targetLocale === sourceLocale) {
+    return { title: chapter.title, textContent: chapter.textContent }
+  }
+  
+  if (!lingoEngine) {
+    await initializeLingo()
+  }
+  
+  if (!lingoEngine) {
+    throw new Error("Lingo.dev SDK not initialized")
+  }
+  
+  try {
+    const chapterObject = {
+      title: chapter.title,
+      textContent: chapter.textContent
+    }
+    
+    const translated = await lingoEngine.localizeObject(chapterObject, {
+      sourceLocale: sourceLocale,
+      targetLocale: targetLocale,
+    })
+    
+    // Cache individual translations
+    const titleCacheKey = `${sourceLocale}-${targetLocale}-${chapter.title}`
+    const contentCacheKey = `${sourceLocale}-${targetLocale}-${chapter.textContent}`
+    
+    if (translated.title && translated.title !== chapter.title) {
+      translationCache.set(titleCacheKey, translated.title)
+    }
+    
+    if (translated.textContent && translated.textContent !== chapter.textContent) {
+      translationCache.set(contentCacheKey, translated.textContent)
+    }
+    
+    return {
+      title: translated.title || chapter.title,
+      textContent: translated.textContent || chapter.textContent
+    }
+  } catch (error) {
+    console.error("Chapter object translation error:", error)
+    // Fallback to individual translations
+    const [translatedTitle, translatedContent] = await Promise.all([
+      translateWithLingo(chapter.title, targetLocale, sourceLocale),
+      translateWithLingo(chapter.textContent, targetLocale, sourceLocale),
+    ])
+    
+    return { title: translatedTitle, textContent: translatedContent }
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -92,10 +146,9 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Translate Chapter] Translating chapter "${chapter.title.substring(0, 50)}..." to ${targetLocale}`)
 
-    const [translatedTitle, translatedContent] = await Promise.all([
-      translateWithLingo(chapter.title, targetLocale, sourceLocale),
-      translateWithLingo(chapter.textContent, targetLocale, sourceLocale),
-    ])
+    const translated = await translateChapterObject(chapter, targetLocale, sourceLocale)
+    const translatedTitle = translated.title
+    const translatedContent = translated.textContent
 
     console.log(`[Translate Chapter] Translation completed for ${targetLocale}`)
 

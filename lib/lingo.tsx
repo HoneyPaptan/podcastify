@@ -56,6 +56,68 @@ async function translateText(text: string, targetLocale: string, sourceLocale: s
   }
 }
 
+async function translateBatch(texts: string[], targetLocale: string, sourceLocale: string = "en"): Promise<string[]> {
+  if (targetLocale === sourceLocale) {
+    return texts
+  }
+  
+  // Check cache first and only request uncached items
+  const uncachedTexts: string[] = []
+  const uncachedIndices: number[] = []
+  const results: string[] = [...texts]
+  
+  texts.forEach((text, index) => {
+    const cacheKey = `${sourceLocale}-${targetLocale}-${text}`
+    if (translationCache.has(cacheKey)) {
+      results[index] = translationCache.get(cacheKey)!
+    } else {
+      uncachedTexts.push(text)
+      uncachedIndices.push(index)
+    }
+  })
+  
+  if (uncachedTexts.length === 0) {
+    return results
+  }
+  
+  try {
+    const response = await fetch("/api/translate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        texts: uncachedTexts,
+        targetLocale,
+        sourceLocale,
+      }),
+    })
+    
+    if (!response.ok) {
+      throw new Error("Batch translation request failed")
+    }
+    
+    const data = await response.json()
+    const translatedTexts = data.translated || uncachedTexts
+    
+    // Update results and cache
+    uncachedIndices.forEach((originalIndex, batchIndex) => {
+      const translated = translatedTexts[batchIndex] || uncachedTexts[batchIndex]
+      results[originalIndex] = translated
+      
+      if (translated && translated !== uncachedTexts[batchIndex]) {
+        const cacheKey = `${sourceLocale}-${targetLocale}-${uncachedTexts[batchIndex]}`
+        translationCache.set(cacheKey, translated)
+      }
+    })
+    
+    return results
+  } catch (error) {
+    console.warn("Batch translation error:", error)
+    return texts
+  }
+}
+
 const UI_KEYS = [
   // Home page
   "Multilingual Podcast Generator",
@@ -156,18 +218,33 @@ export function LingoProvider({ children }: { children: ReactNode }) {
     setIsLoading(true)
     
     const translateAll = async () => {
-      const translated: Record<string, string> = {}
-      
-      for (const key of UI_KEYS) {
-        try {
-          const translatedText = await translateText(key, locale, "en")
-          translated[key] = translatedText
-        } catch (error) {
-          translated[key] = key
+      try {
+        const translatedTexts = await translateBatch(UI_KEYS, locale, "en")
+        const translated: Record<string, string> = {}
+        
+        UI_KEYS.forEach((key, index) => {
+          translated[key] = translatedTexts[index] || key
+        })
+        
+        setTranslations(translated)
+      } catch (error) {
+        console.warn("Batch translation failed, falling back to individual translations:", error)
+        
+        // Fallback to individual translations
+        const translated: Record<string, string> = {}
+        
+        for (const key of UI_KEYS) {
+          try {
+            const translatedText = await translateText(key, locale, "en")
+            translated[key] = translatedText
+          } catch (error) {
+            translated[key] = key
+          }
         }
+        
+        setTranslations(translated)
       }
       
-      setTranslations(translated)
       setIsLoading(false)
     }
 

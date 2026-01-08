@@ -3,8 +3,5 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["iad1"],
-  "env": {
-    "NEXT_PUBLIC_APP_URL": "@next_public_app_url"
-  }
+  "regions": ["iad1"]
 }

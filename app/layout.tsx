@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import "./external-styles.css";
 import { LingoProvider } from "@/lib/lingo";
 import { TranslationLoader } from "@/components/translation-loader";
 import { Toaster } from "@/components/ui/sonner";

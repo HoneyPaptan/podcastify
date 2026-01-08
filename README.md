@@ -1,5 +1,9 @@
 # Podcastify - Multilingual Podcast Generator
 
+[![Demo Video](https://img.youtube.com/vi/vhfweyoZyM0/maxresdefault.jpg)](https://www.youtube.com/watch?v=vhfweyoZyM0)
+
+**Demo:** In case the app is not working, you can watch the demo video above to see how Podcastify works.
+
 Podcastify is a modern web application that transforms blog posts into multilingual podcast audio files. Simply paste a blog URL, and the application will scrape the content, generate chapters, translate them into multiple languages, and create high-quality audio files for each language.
 
 ## Technologies Used

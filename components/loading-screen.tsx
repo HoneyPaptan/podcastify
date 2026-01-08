@@ -17,22 +17,22 @@ interface LoadingScreenProps {
 
 export function LoadingScreen({ steps }: LoadingScreenProps) {
   return (
-    <div className="relative z-10 w-full max-w-md mx-auto">
-      <div className="space-y-8">
+    <div className="relative z-10 w-full max-w-md mx-auto px-4 sm:px-0">
+      <div className="space-y-6 sm:space-y-8">
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-semibold text-foreground">
+          <h2 className="text-xl sm:text-2xl font-semibold text-foreground">
             Creating your podcast
           </h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs sm:text-sm text-muted-foreground">
             This may take a few moments
           </p>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2 sm:space-y-3">
           {steps.map((step) => (
             <div
               key={step.id}
-              className="flex items-center gap-3 p-4 rounded-lg border bg-card/50 backdrop-blur-sm"
+              className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg border bg-card/50 backdrop-blur-sm"
             >
               <div className="flex-shrink-0">
                 {step.status === "completed" ? (

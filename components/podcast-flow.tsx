@@ -205,7 +205,7 @@ function ChapterNode({
           />
         )}
         <Card className={cn(
-          "w-72 p-4 border-2 shadow-lg cursor-pointer hover:shadow-xl transition-shadow relative bg-card",
+          "w-[280px] sm:w-72 p-3 sm:p-4 border-2 shadow-lg cursor-pointer hover:shadow-xl transition-shadow relative bg-card",
           isGeneratingAudio && "border-transparent"
         )}>
           <div className="space-y-3">
@@ -263,21 +263,21 @@ function ChapterNode({
                   {t("View Content")}
                 </Button>
             </DrawerTrigger>
-            <DrawerContent className="max-h-[80vh]">
-              <DrawerHeader>
-                <DrawerTitle>{displayContentForDrawer.title}</DrawerTitle>
-                <DrawerDescription>
+            <DrawerContent className="max-h-[85vh] sm:max-h-[80vh]">
+              <DrawerHeader className="px-4 sm:px-6">
+                <DrawerTitle className="text-base sm:text-lg">{displayContentForDrawer.title}</DrawerTitle>
+                <DrawerDescription className="text-xs sm:text-sm">
                   {chapter.wordCount} {t("words")} • {t("Language:")} {LANGUAGES.find(l => l.code === selectedLanguage)?.name || selectedLanguage.toUpperCase()}
                 </DrawerDescription>
               </DrawerHeader>
-              <div className="px-4 pb-4 overflow-y-auto">
+              <div className="px-4 sm:px-6 pb-4 overflow-y-auto">
                 <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                  <p className="whitespace-pre-wrap text-xs sm:text-sm leading-relaxed">
                     {displayContentForDrawer.textContent}
                   </p>
                 </div>
               </div>
-              <DrawerFooter>
+              <DrawerFooter className="px-4 sm:px-6">
                 <div className="flex flex-wrap gap-2">
                   {LANGUAGES.map((lang) => (
                     <Button
@@ -414,7 +414,7 @@ function AudioNode({
               </div>
             </button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="max-w-[95vw] sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{t("Audio Player")}</DialogTitle>
               <DialogDescription>
@@ -1165,20 +1165,20 @@ export function PodcastFlow({
   return (
     <div className="w-full h-full relative">
       {/* App Logo and Title - Top Left */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-2.5">
-        <div className="p-1.5 rounded-md bg-muted/50 border border-border">
-          <Podcast className="h-4 w-4 text-foreground" />
+      <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-10 flex items-center gap-1.5 sm:gap-2.5">
+        <div className="p-1 sm:p-1.5 rounded-md bg-muted/50 border border-border">
+          <Podcast className="h-3 w-3 sm:h-4 sm:w-4 text-foreground" />
         </div>
         <div className="flex flex-col">
-          <h1 className="text-sm font-semibold text-foreground leading-tight">
+          <h1 className="text-xs sm:text-sm font-semibold text-foreground leading-tight">
             {t("Podcastify")}
           </h1>
-          <p className="text-xs text-muted-foreground leading-tight">{t("Blog to Podcast Converter")}</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground leading-tight hidden sm:block">{t("Blog to Podcast Converter")}</p>
         </div>
       </div>
       
       {/* Legend - Below Logo with spacing */}
-      <div className="absolute top-16 left-4 z-10">
+      <div className="absolute top-12 left-2 sm:top-16 sm:left-4 z-10 hidden md:block">
         <div className="flex flex-col gap-1.5">
           <p className="text-xs font-medium text-muted-foreground mb-0.5">{t("LEGEND")}</p>
           <div className="flex items-center gap-2">
@@ -1199,12 +1199,12 @@ export function PodcastFlow({
       </div>
 
       {/* Language Switcher - Top Right */}
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 z-10">
         <LanguageSwitcher />
       </div>
 
       {/* Top Center Buttons */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 flex items-center gap-2">
+      <div className="absolute top-12 sm:top-4 left-1/2 transform -translate-x-1/2 z-10 flex items-center gap-1.5 sm:gap-2">
         {onStartNew && (
           <Button
             variant="outline"
@@ -1229,43 +1229,46 @@ export function PodcastFlow({
       </div>
       
       {selectedAudioNodes.size > 0 && (
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10">
-          <Card className="p-4 shadow-xl border-2 border-blue-500 bg-background/95 backdrop-blur">
-            <div className="flex items-center gap-4">
-              <div className="flex flex-col gap-1">
-                <p className="text-sm font-semibold">
+        <div className="absolute bottom-4 sm:bottom-8 left-1/2 transform -translate-x-1/2 z-10 w-[calc(100%-2rem)] sm:w-auto max-w-[90vw]">
+          <Card className="p-3 sm:p-4 shadow-xl border-2 border-blue-500 bg-background/95 backdrop-blur">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+              <div className="flex flex-col gap-1 flex-1 sm:flex-initial">
+                <p className="text-xs sm:text-sm font-semibold">
                   {selectedAudioNodes.size} {selectedAudioNodes.size > 1 ? t("audios") : t("audio")} {t("selected")}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[10px] sm:text-xs text-muted-foreground">
                   {t("Select audios with the same language to merge")}
                 </p>
               </div>
-              <Button
-                onClick={downloadAllSelected}
-                disabled={selectedAudioNodes.size < 1}
-                size="sm"
-                variant="secondary"
-                className="gap-2"
-              >
-                <FolderArchive className="h-4 w-4" />
-                {t("Download All")}
-              </Button>
-              <Button
-                onClick={createMergeGroup}
-                disabled={selectedAudioNodes.size < 2}
-                size="sm"
-                className="gap-2"
-              >
-                <Link2 className="h-4 w-4" />
-                {t("Create Merge Group")}
-              </Button>
-              <Button
-                onClick={() => setSelectedAudioNodes(new Set())}
-                variant="outline"
-                size="sm"
-              >
-                {t("Clear")}
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-2">
+                <Button
+                  onClick={downloadAllSelected}
+                  disabled={selectedAudioNodes.size < 1}
+                  size="sm"
+                  variant="secondary"
+                  className="gap-2 w-full sm:w-auto"
+                >
+                  <FolderArchive className="h-3 w-3 sm:h-4 sm:w-4" />
+                  {t("Download All")}
+                </Button>
+                <Button
+                  onClick={createMergeGroup}
+                  disabled={selectedAudioNodes.size < 2}
+                  size="sm"
+                  className="gap-2 w-full sm:w-auto"
+                >
+                  <Link2 className="h-3 w-3 sm:h-4 sm:w-4" />
+                  {t("Create Merge Group")}
+                </Button>
+                <Button
+                  onClick={() => setSelectedAudioNodes(new Set())}
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                >
+                  {t("Clear")}
+                </Button>
+              </div>
             </div>
           </Card>
         </div>
@@ -1279,11 +1282,14 @@ export function PodcastFlow({
         nodeTypes={nodeTypes}
         fitView
         className="bg-background"
-        fitViewOptions={{ padding: 0.2, maxZoom: 1.5, minZoom: 0.3 }}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.5 }}
+        fitViewOptions={{ padding: 0.1, maxZoom: 2, minZoom: 0.2 }}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.4 }}
         nodesDraggable={true}
         nodesConnectable={false}
         elementsSelectable={true}
+        panOnScroll={true}
+        zoomOnScroll={true}
+        zoomOnPinch={true}
       >
         <Background />
       </ReactFlow>

@@ -415,7 +415,7 @@ export default function Home() {
 
   return (
     <>
-      <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2">
         <ThemeToggle />
         <LanguageSwitcher />
       </div>
@@ -433,20 +433,20 @@ export default function Home() {
           <div className="fixed inset-0 z-0">
             <LightRays className="w-full h-full" />
           </div>
-          <div className="relative z-10 w-full max-w-2xl mx-auto">
-            <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="relative z-10 w-full max-w-2xl mx-auto px-4 sm:px-6">
+            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
               {/* Title and Paragraph */}
               <div className="space-y-2 text-center">
-                <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
+                <h1 className="text-3xl sm:text-3xl font-bold tracking-tight text-foreground md:text-4xl lg:text-5xl">
                   {t("Multilingual Podcast Generator")}
                 </h1>
-                <p className="text-sm text-muted-foreground sm:text-base">
+                <p className="text-xs sm:text-sm text-muted-foreground md:text-base">
                   {t("Turn any blog into a multilingual podcast in seconds")}
                 </p>
               </div>
 
               {/* Input and Submit */}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                 <div className="relative flex-1">
                   <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -460,9 +460,9 @@ export default function Home() {
                 </div>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div>
+                    <div className="w-full sm:w-auto flex-1 sm:flex-initial">
                       <Select value={chapterCount} onValueChange={setChapterCount} disabled={isLoading}>
-                        <SelectTrigger className="h-12 w-20 px-3 py-0 [&[data-size=default]]:!h-12">
+                        <SelectTrigger className="h-12 w-full sm:w-20 px-3 py-0 [&[data-size=default]]:!h-12">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -482,7 +482,7 @@ export default function Home() {
                 <Button 
                   type="submit" 
                   disabled={isLoading || !url.trim()} 
-                  className="h-12 w-12 p-0 shrink-0"
+                  className="h-12 w-full sm:w-12 p-0 shrink-0"
                 >
                   {isLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />

@@ -26,6 +26,7 @@ import { LoadingScreen } from "@/components/loading-screen"
 import { ProcessingStatus } from "@/components/processing-status"
 import { ChapterCard } from "@/components/chapter-card"
 import { PodcastFlow } from "@/components/podcast-flow"
+import { TranslationDebug } from "@/components/translation-debug"
 import { Loader2, Link as LinkIcon, Sparkles, ArrowRight } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -508,6 +509,7 @@ export default function Home() {
               isLoading={isLoading}
               onStartNew={handleStartNew}
             />
+            {process.env.NODE_ENV === 'development' && <TranslationDebug />}
           </div>
         </>
       )}

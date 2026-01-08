@@ -108,9 +108,6 @@ podcastify/
    OPENROUTER_API_KEY=your_openrouter_api_key
    GEMINI_API_KEY=your_gemini_api_key
    LINGO_API_KEY=your_lingo_api_key
-   
-   # Inngest (for local development)
-   INNGEST_EVENT_KEY=your_inngest_event_key
    ```
 
 4. **Set up Inngest for local development**
@@ -123,7 +120,6 @@ podcastify/
    This will:
    - Start the Inngest Dev Server (usually on `http://localhost:8288`)
    - Display an Event Key in the terminal
-   - Copy the Event Key and add it to your `.env.local` as `INNGEST_EVENT_KEY`
    
    **Keep this terminal running** while developing.
 

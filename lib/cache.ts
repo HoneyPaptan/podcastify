@@ -25,6 +25,9 @@ const CACHE_KEYS = {
   TRANSLATIONS: "podcastify_translations",
   AUDIOS: "podcastify_audios",
   CURRENT_SESSION: "podcastify_current_session",
+  UI_TRANSLATIONS: "podcastify_ui_translations",
+  COMPONENT_HASHES: "podcastify_component_hashes",
+  TRANSLATION_VERSION: "podcastify_translation_version",
 }
 
 export function getCachedChapters(url: string, chapterCount: number): any[] | null {
@@ -242,6 +245,135 @@ export function clearCurrentSession(): void {
     localStorage.removeItem(CACHE_KEYS.CURRENT_SESSION)
   } catch {
     // Ignore localStorage errors
+  }
+}
+
+// UI Translation Caching
+interface CachedUITranslation {
+  locale: string
+  translations: Record<string, string>
+  componentHashes: Record<string, string>
+  timestamp: number
+  version: string
+  keyCount: number
+}
+
+export function getCachedUITranslations(locale: string): CachedUITranslation | null {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.UI_TRANSLATIONS)
+    if (!cached) return null
+
+    const translations: Record<string, CachedUITranslation> = JSON.parse(cached)
+    const cacheData = translations[locale]
+    
+    if (!cacheData) return null
+
+    // Check if cache is expired (24 hours for UI translations)
+    const isExpired = Date.now() - cacheData.timestamp > 24 * 60 * 60 * 1000
+    
+    if (isExpired) {
+      debugLog('UI translation cache expired', { locale })
+      invalidateUITranslationCache(locale)
+      return null
+    }
+
+    debugLog('Found cached UI translations', { 
+      locale, 
+      keyCount: cacheData.keyCount,
+      version: cacheData.version 
+    })
+    
+    return cacheData
+  } catch (error) {
+    debugLog('Error reading UI translation cache:', error)
+    return null
+  }
+}
+
+export function setCachedUITranslations(
+  locale: string,
+  translations: Record<string, string>,
+  componentHashes: Record<string, string>,
+  version: string
+): void {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.UI_TRANSLATIONS)
+    const allTranslations: Record<string, CachedUITranslation> = cached ? JSON.parse(cached) : {}
+
+    const cacheData: CachedUITranslation = {
+      locale,
+      translations,
+      componentHashes,
+      timestamp: Date.now(),
+      version,
+      keyCount: Object.keys(translations).length,
+    }
+
+    allTranslations[locale] = cacheData
+
+    // Check cache size limit (5MB total)
+    const cacheSize = JSON.stringify(allTranslations).length
+    if (cacheSize > 5 * 1024 * 1024) {
+      debugLog('Cache size limit exceeded, clearing old entries', { size: cacheSize })
+      clearOldUICacheEntries(allTranslations)
+    }
+
+    localStorage.setItem(CACHE_KEYS.UI_TRANSLATIONS, JSON.stringify(allTranslations))
+    debugLog('Saved UI translations to cache', { 
+      locale, 
+      keyCount: Object.keys(translations).length,
+      size: JSON.stringify(cacheData).length 
+    })
+  } catch (error) {
+    debugLog('Error saving UI translations to cache:', error)
+  }
+}
+
+export function invalidateUITranslationCache(locale: string): void {
+  try {
+    const cached = localStorage.getItem(CACHE_KEYS.UI_TRANSLATIONS)
+    if (!cached) return
+
+    const allTranslations: Record<string, CachedUITranslation> = JSON.parse(cached)
+    delete allTranslations[locale]
+    
+    localStorage.setItem(CACHE_KEYS.UI_TRANSLATIONS, JSON.stringify(allTranslations))
+    debugLog('Invalidated UI translation cache', { locale })
+  } catch (error) {
+    debugLog('Error invalidating UI translation cache:', error)
+  }
+}
+
+export function clearAllUICache(): void {
+  try {
+    localStorage.removeItem(CACHE_KEYS.UI_TRANSLATIONS)
+    localStorage.removeItem(CACHE_KEYS.COMPONENT_HASHES)
+    localStorage.removeItem(CACHE_KEYS.TRANSLATION_VERSION)
+    debugLog('Cleared all UI translation cache')
+  } catch (error) {
+    debugLog('Error clearing UI translation cache:', error)
+  }
+}
+
+function clearOldUICacheEntries(allTranslations: Record<string, CachedUITranslation>): void {
+  const entries = Object.entries(allTranslations)
+  
+  // Sort by timestamp (oldest first) and keep only the 3 most recent
+  entries.sort(([, a], [, b]) => a.timestamp - b.timestamp)
+  
+  const toKeep = entries.slice(-3)
+  const cleaned: Record<string, CachedUITranslation> = {}
+  
+  toKeep.forEach(([locale, data]) => {
+    cleaned[locale] = data
+  })
+  
+  Object.assign(allTranslations, cleaned)
+}
+
+function debugLog(message: string, ...args: any[]): void {
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Cache Debug] ${message}`, ...args)
   }
 }
 

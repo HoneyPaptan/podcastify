@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { join } from "path";
 import { readFile, writeFile, unlink } from "fs/promises";
 import JSZip from "jszip";
-
-const AUDIO_DIR = join(process.cwd(), "public", "audio");
+import { AudioStorageManager } from "@/lib/audio-storage";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,43 +23,67 @@ export async function POST(request: NextRequest) {
 
     // Add each audio file to the zip
     for (const filename of audioFiles) {
-      const filePath = join(AUDIO_DIR, filename);
+      let fileBuffer: Buffer
       
-      try {
-        const fileBuffer = await readFile(filePath);
-        zip.file(filename, fileBuffer);
-        console.log(`[ZIP] Added ${filename} to zip`);
-      } catch (error) {
-        console.error(`[ZIP] Failed to read ${filename}:`, error);
-        return NextResponse.json(
-          { error: `Failed to read audio file: ${filename}` },
-          { status: 500 }
-        );
+      // Check if filename is a URL (Vercel Blob) or local file
+      if (filename.startsWith('http')) {
+        // Fetch from Vercel Blob
+        const response = await fetch(filename)
+        if (!response.ok) {
+          console.error(`[ZIP] Failed to fetch audio: ${filename}`)
+          return NextResponse.json(
+            { error: `Failed to fetch audio file: ${filename}` },
+            { status: 500 }
+          )
+        }
+        const arrayBuffer = await response.arrayBuffer()
+        fileBuffer = Buffer.from(arrayBuffer)
+      } else {
+        // Read local file
+        const AUDIO_DIR = join(process.cwd(), "public", "audio");
+        const filePath = join(AUDIO_DIR, filename);
+        
+        try {
+          fileBuffer = await readFile(filePath);
+        } catch (error) {
+          console.error(`[ZIP] Failed to read ${filename}:`, error);
+          return NextResponse.json(
+            { error: `Failed to read audio file: ${filename}` },
+            { status: 500 }
+          );
+        }
       }
+      
+      // Extract just the filename from URL if needed
+      const zipFilename = filename.startsWith('http') 
+        ? filename.split('/').pop() || filename
+        : filename
+      
+      zip.file(zipFilename, fileBuffer);
+      console.log(`[ZIP] Added ${zipFilename} to zip`);
     }
 
     // Generate the zip file
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
-    // Save the zip file
-    const zipFileName = `podcast-bundle-${Date.now()}.zip`;
-    const zipFilePath = join(AUDIO_DIR, zipFileName);
-    await writeFile(zipFilePath, zipBuffer);
+    // Store the zip file using AudioStorageManager
+    const timestamp = Date.now()
+    const chapterId = `podcast-bundle-${timestamp}`
+    const language = "zip"
+    
+    const storedZip = await AudioStorageManager.storeAudio({
+      chapterId,
+      language,
+      audioBuffer: zipBuffer,
+      mimeType: "application/zip"
+    })
+    
+    const zipFileName = `${chapterId}-${language}.zip`;
 
-    console.log(`[ZIP] Zip file created: ${zipFileName}, size: ${zipBuffer.length} bytes`);
-
-    // Schedule cleanup after 5 minutes
-    setTimeout(async () => {
-      try {
-        await unlink(zipFilePath);
-        console.log(`[ZIP] Cleaned up: ${zipFileName}`);
-      } catch (error) {
-        console.error(`[ZIP] Failed to cleanup ${zipFileName}:`, error);
-      }
-    }, 5 * 60 * 1000);
+    console.log(`[ZIP] Zip file created: ${storedZip.url}, size: ${zipBuffer.length} bytes`);
 
     return NextResponse.json({
-      url: `/audio/${zipFileName}`,
+      url: storedZip.url,
       filename: zipFileName,
       size: zipBuffer.length,
       fileCount: audioFiles.length,

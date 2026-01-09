@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import fs from "fs"
 import path from "path"
+import { AudioStorageManager } from "@/lib/audio-storage"
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,14 +16,30 @@ export async function POST(request: NextRequest) {
     // Read all audio files
     const audioBuffers: Buffer[] = []
     for (const fileName of audioFiles) {
-      const filePath = path.join(process.cwd(), "public", "audio", fileName)
-      
-      if (!fs.existsSync(filePath)) {
-        console.error(`[Merge] File not found: ${filePath}`)
-        return NextResponse.json({ error: `Audio file not found: ${fileName}` }, { status: 404 })
-      }
+      let buffer: Buffer
 
-      const buffer = fs.readFileSync(filePath)
+      // Check if fileName is a URL (Vercel Blob) or local file
+      if (fileName.startsWith('http')) {
+        // Fetch from Vercel Blob
+        const response = await fetch(fileName)
+        if (!response.ok) {
+          console.error(`[Merge] Failed to fetch audio: ${fileName}`)
+          return NextResponse.json({ error: `Failed to fetch audio file: ${fileName}` }, { status: 404 })
+        }
+        const arrayBuffer = await response.arrayBuffer()
+        buffer = Buffer.from(arrayBuffer)
+      } else {
+        // Read local file
+        const filePath = path.join(process.cwd(), "public", "audio", fileName)
+        
+        if (!fs.existsSync(filePath)) {
+          console.error(`[Merge] File not found: ${filePath}`)
+          return NextResponse.json({ error: `Audio file not found: ${fileName}` }, { status: 404 })
+        }
+
+        buffer = fs.readFileSync(filePath)
+      }
+      
       audioBuffers.push(buffer)
     }
 
@@ -42,18 +59,24 @@ export async function POST(request: NextRequest) {
       mergedBuffer = Buffer.concat([firstFile, ...restFiles])
     }
 
-    // Save merged file
+    // Store merged file using AudioStorageManager
     const timestamp = Date.now()
-    const mergedFileName = `merged-${timestamp}.wav`
-    const mergedFilePath = path.join(process.cwd(), "public", "audio", mergedFileName)
+    const chapterId = `merged-${timestamp}`
+    const language = "merged"
     
-    fs.writeFileSync(mergedFilePath, mergedBuffer)
-    console.log(`[Merge] Created merged file: ${mergedFileName}`)
+    const storedAudio = await AudioStorageManager.storeAudio({
+      chapterId,
+      language,
+      audioBuffer: mergedBuffer,
+      mimeType: "audio/wav"
+    })
+    
+    console.log(`[Merge] Created merged file: ${storedAudio.url}`)
 
     return NextResponse.json({
       success: true,
-      fileName: mergedFileName,
-      url: `/audio/${mergedFileName}`,
+      fileName: `${chapterId}-${language}.wav`,
+      url: storedAudio.url,
     })
   } catch (error) {
     console.error("[Merge] Error:", error)

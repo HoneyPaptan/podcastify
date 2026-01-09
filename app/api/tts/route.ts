@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { writeFile, mkdir } from "fs/promises"
-import { join } from "path"
-import { existsSync } from "fs"
+import { AudioStorageManager } from "@/lib/audio-storage"
 
-const AUDIO_DIR = join(process.cwd(), "public", "audio")
 
-async function ensureAudioDir() {
-  if (!existsSync(AUDIO_DIR)) {
-    await mkdir(AUDIO_DIR, { recursive: true })
-  }
-}
 
 function chunkText(text: string, maxLength: number = 5000): string[] {
   const sentences = text.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0)
@@ -153,9 +145,7 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate: number = 24000, channels: numbe
   return buffer
 }
 
-async function generateAudioForText(text: string, language: string, outputPath: string, audioFileName: string): Promise<string> {
-  await ensureAudioDir()
-
+async function generateAudioForText(text: string, language: string): Promise<{ buffer: Buffer; mimeType: string }> {
   const chunks = chunkText(text, 5000)
   let detectedMimeType = "audio/mpeg"
   let sampleRate = 24000
@@ -175,13 +165,11 @@ async function generateAudioForText(text: string, language: string, outputPath: 
       }
       console.log(`[TTS] Converting PCM to WAV format (sample rate: ${sampleRate}Hz)`)
       audioBuffer = pcmToWav(result.buffer, sampleRate)
-      const wavFileName = audioFileName.replace(/\.mp3$/, ".wav")
-      outputPath = outputPath.replace(/\.mp3$/, ".wav")
-      audioFileName = wavFileName
+      detectedMimeType = "audio/wav"
     }
     
-    await writeFile(outputPath, audioBuffer)
-    console.log(`[TTS] Audio file saved: ${outputPath}, size: ${audioBuffer.length} bytes, format: ${detectedMimeType}`)
+    console.log(`[TTS] Audio generated, size: ${audioBuffer.length} bytes, format: ${detectedMimeType}`)
+    return { buffer: audioBuffer, mimeType: detectedMimeType }
   } else {
     const audioChunks: Buffer[] = []
     for (let i = 0; i < chunks.length; i++) {
@@ -199,22 +187,17 @@ async function generateAudioForText(text: string, language: string, outputPath: 
       }
     }
     
-    let combinedAudio = Buffer.concat(audioChunks)
+    let combinedAudio = Buffer.concat(audioChunks) as Buffer
     
     if (detectedMimeType.includes("L16") || detectedMimeType.includes("pcm")) {
       console.log(`[TTS] Converting PCM to WAV format (sample rate: ${sampleRate}Hz)`)
       combinedAudio = pcmToWav(combinedAudio, sampleRate)
-      const wavFileName = audioFileName.replace(/\.mp3$/, ".wav")
-      outputPath = outputPath.replace(/\.mp3$/, ".wav")
-      audioFileName = wavFileName
+      detectedMimeType = "audio/wav"
     }
     
-    await writeFile(outputPath, combinedAudio)
-    console.log(`[TTS] Audio file saved: ${outputPath}, size: ${combinedAudio.length} bytes, format: ${detectedMimeType}`)
+    console.log(`[TTS] Audio generated, size: ${combinedAudio.length} bytes, format: ${detectedMimeType}`)
+    return { buffer: combinedAudio, mimeType: detectedMimeType }
   }
-
-  const audioUrl = `/audio/${audioFileName}`
-  return audioUrl
 }
 
 export async function POST(request: NextRequest) {
@@ -244,35 +227,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const existingFiles = await import("fs/promises").then((fs) => 
-      fs.readdir(AUDIO_DIR).catch(() => [])
-    )
+    const existingAudio = await AudioStorageManager.getAudioInfo(chapterId, language)
     
-    const existingFile = existingFiles.find((file: string) => 
-      file.startsWith(`${chapterId}-${language}-`) && (file.endsWith(".mp3") || file.endsWith(".wav") || file.endsWith(".ogg") || file.endsWith(".m4a"))
-    )
-
-    if (existingFile) {
-      console.log(`[TTS] Using existing audio file: ${existingFile}`)
+    if (existingAudio) {
+      console.log(`[TTS] Using existing audio: ${existingAudio.url}`)
       return NextResponse.json({
-        audioUrl: `/audio/${existingFile}`,
+        audioUrl: existingAudio.url,
         chapterId: chapterId,
         language: language,
         cached: true,
       })
     }
 
-    const audioFileName = `${chapterId}-${language}-${Date.now()}.wav`
-    const audioPath = join(AUDIO_DIR, audioFileName)
-    const audioUrl = await generateAudioForText(text, language, audioPath, audioFileName)
+    const { buffer: audioBuffer, mimeType } = await generateAudioForText(text, language)
+    const storedAudio = await AudioStorageManager.storeAudio({
+      chapterId,
+      language,
+      audioBuffer,
+      mimeType
+    })
 
-    console.log(`[TTS] Audio generated: ${audioUrl}`)
+    console.log(`[TTS] Audio stored: ${storedAudio.url}`)
 
     return NextResponse.json({
-      audioUrl: audioUrl,
+      audioUrl: storedAudio.url,
       chapterId: chapterId,
       language: language,
-      cached: false,
+      cached: storedAudio.cached,
     })
   } catch (error) {
     console.error("[TTS] Error:", error)

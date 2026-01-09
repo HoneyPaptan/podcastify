@@ -4,6 +4,16 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   // turbopack: {}, // Disabled to fix PostCSS build issue
   serverExternalPackages: ["jsdom", "lingo.dev"],
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = config.externals || [];
+      config.externals.push({
+        'jsdom': 'commonjs jsdom'
+      });
+    }
+    return config;
+  },
+  turbopack: {},
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

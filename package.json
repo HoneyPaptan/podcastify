@@ -45,7 +45,7 @@
     "embla-carousel-react": "^8.6.0",
     "inngest": "^3.45.1",
     "input-otp": "^1.4.2",
-    "jsdom": "^27.2.0",
+    "jsdom": "^25.0.1",
     "jszip": "^3.10.1",
     "lingo.dev": "^0.115.0",
     "lucide-react": "^0.553.0",

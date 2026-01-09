@@ -388,11 +388,8 @@ const PrismaticBurst = ({
       } catch (e) {
         void e;
       }
-      programRef.current = null;
       rendererRef.current = null;
       gradTexRef.current = null;
-      meshRef.current = null;
-      triRef.current = null;
     };
   }, []);
 
@@ -457,7 +454,7 @@ const PrismaticBurst = ({
     program.uniforms.uColorCount.value = count;
   }, [intensity, speed, animationType, colors, distort, offset, rayCount]);
 
-  return <div className="prismatic-burst-container" ref={containerRef} />;
+  return <div className="w-full h-full relative overflow-hidden" ref={containerRef} />;
 };
 
 export default PrismaticBurst;

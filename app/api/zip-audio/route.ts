@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
       // Check if filename is a URL (Vercel Blob) or local file
       if (filename.startsWith('http')) {
         // Fetch from Vercel Blob
+        console.log(`[ZIP] Fetching from URL: ${filename}`)
         const response = await fetch(filename)
         if (!response.ok) {
           console.error(`[ZIP] Failed to fetch audio: ${filename}`)
@@ -46,11 +47,47 @@ export async function POST(request: NextRequest) {
         try {
           fileBuffer = await readFile(filePath);
         } catch (error) {
-          console.error(`[ZIP] Failed to read ${filename}:`, error);
-          return NextResponse.json(
-            { error: `Failed to read audio file: ${filename}` },
-            { status: 500 }
-          );
+          console.error(`[ZIP] Local file not found: ${filePath}, attempting to find in storage`);
+          
+          // Try to find the file via AudioStorageManager
+          const parts = filename.split('-')
+          if (parts.length >= 3) {
+            const chapterId = parts.slice(0, -2).join('-')
+            const language = parts.slice(-2)[0]
+            
+            try {
+              const audioInfo = await AudioStorageManager.getAudioInfo(chapterId, language)
+              if (audioInfo && audioInfo.url) {
+                console.log(`[ZIP] Found audio in storage: ${audioInfo.url}`)
+                const response = await fetch(audioInfo.url)
+                if (response.ok) {
+                  const arrayBuffer = await response.arrayBuffer()
+                  fileBuffer = Buffer.from(arrayBuffer)
+                } else {
+                  return NextResponse.json(
+                    { error: `Failed to fetch audio from storage: ${filename}` },
+                    { status: 500 }
+                  )
+                }
+              } else {
+                return NextResponse.json(
+                  { error: `Audio file not found in storage: ${filename}` },
+                  { status: 404 }
+                )
+              }
+            } catch (storageError) {
+              console.error(`[ZIP] Error fetching from storage:`, storageError)
+              return NextResponse.json(
+                { error: `Error fetching audio from storage: ${filename}` },
+                { status: 500 }
+              )
+            }
+          } else {
+            return NextResponse.json(
+              { error: `Invalid audio file name format: ${filename}` },
+              { status: 400 }
+            )
+          }
         }
       }
       

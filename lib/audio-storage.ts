@@ -21,6 +21,10 @@ export class AudioStorageManager {
     return process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined
   }
 
+  private static hasBlobToken(): boolean {
+    return !!process.env.BLOB_READ_WRITE_TOKEN
+  }
+
   private static generateAudioKey(chapterId: string, language: string): string {
     const timestamp = Date.now()
     const extension = 'wav'
@@ -31,6 +35,11 @@ export class AudioStorageManager {
     chapterId: string, 
     language: string
   ): Promise<string | null> {
+    if (!this.hasBlobToken()) {
+      console.log('[Blob Storage] No BLOB_READ_WRITE_TOKEN, skipping blob check')
+      return null
+    }
+
     try {
       const { blobs } = await list({
         prefix: `audio/${chapterId}-${language}-`,
@@ -86,6 +95,10 @@ export class AudioStorageManager {
     audioBuffer: Buffer,
     mimeType: string = 'audio/wav'
   ): Promise<string> {
+    if (!this.hasBlobToken()) {
+      throw new Error('BLOB_READ_WRITE_TOKEN environment variable is required for Vercel Blob storage')
+    }
+
     const key = this.generateAudioKey(chapterId, language)
     
     try {
@@ -130,85 +143,89 @@ export class AudioStorageManager {
   static async storeAudio(options: AudioStorageOptions): Promise<StoredAudioInfo> {
     const { chapterId, language, audioBuffer, mimeType = 'audio/wav' } = options
 
-    if (!this.isVercelEnvironment()) {
-      console.log('[Audio Storage] Using local storage (non-Vercel environment)')
-      
-      const existingUrl = await this.checkExistingAudioLocal(chapterId, language)
-      if (existingUrl) {
-        return {
-          url: existingUrl,
-          chapterId,
-          language,
-          cached: true
-        }
-      }
-
-      const url = await this.saveToLocal(chapterId, language, audioBuffer, mimeType)
+    // Always check local cache first
+    const existingLocalUrl = await this.checkExistingAudioLocal(chapterId, language)
+    if (existingLocalUrl) {
+      console.log('[Audio Storage] Using cached local file')
       return {
-        url,
-        chapterId,
-        language,
-        cached: false,
-        size: audioBuffer.length
-      }
-    }
-
-    console.log('[Audio Storage] Using Vercel Blob storage')
-    
-    const existingUrl = await this.checkExistingAudioVercel(chapterId, language)
-    if (existingUrl) {
-      return {
-        url: existingUrl,
+        url: existingLocalUrl,
         chapterId,
         language,
         cached: true
       }
     }
 
-    const url = await this.saveToVercelBlob(chapterId, language, audioBuffer, mimeType)
-    return {
-      url,
-      chapterId,
-      language,
-      cached: false,
-      size: audioBuffer.length,
-        uploadedAt: new Date()
-    }
-  }
-
-  static async getAudioInfo(chapterId: string, language: string): Promise<StoredAudioInfo | null> {
-    if (!this.isVercelEnvironment()) {
-      const url = await this.checkExistingAudioLocal(chapterId, language)
-      if (url) {
+    // If in Vercel environment with token, use Blob storage
+    if (this.isVercelEnvironment() && this.hasBlobToken()) {
+      console.log('[Audio Storage] Using Vercel Blob storage')
+      
+      const existingBlobUrl = await this.checkExistingAudioVercel(chapterId, language)
+      if (existingBlobUrl) {
         return {
-          url,
+          url: existingBlobUrl,
           chapterId,
           language,
           cached: true
         }
       }
-      return null
+
+      const url = await this.saveToVercelBlob(chapterId, language, audioBuffer, mimeType)
+      return {
+        url,
+        chapterId,
+        language,
+        cached: false,
+        size: audioBuffer.length,
+        uploadedAt: new Date()
+      }
     }
 
-    const url = await this.checkExistingAudioVercel(chapterId, language)
-    if (url) {
-      try {
-        const blob = await head(url)
-        return {
-          url,
-          chapterId,
-          language,
-          cached: true,
-          size: blob.size,
-          uploadedAt: blob.uploadedAt
-        }
-      } catch (error) {
-        console.warn('[Blob Storage] Error getting blob info:', error)
-        return {
-          url,
-          chapterId,
-          language,
-          cached: true
+    // Fallback to local storage
+    console.log('[Audio Storage] Using local storage (fallback)')
+    const url = await this.saveToLocal(chapterId, language, audioBuffer, mimeType)
+    return {
+      url,
+      chapterId,
+      language,
+      cached: false,
+      size: audioBuffer.length
+    }
+  }
+
+  static async getAudioInfo(chapterId: string, language: string): Promise<StoredAudioInfo | null> {
+    // Always check local cache first
+    const localUrl = await this.checkExistingAudioLocal(chapterId, language)
+    if (localUrl) {
+      return {
+        url: localUrl,
+        chapterId,
+        language,
+        cached: true
+      }
+    }
+
+    // If in Vercel environment with token, check blob storage
+    if (this.isVercelEnvironment() && this.hasBlobToken()) {
+      const blobUrl = await this.checkExistingAudioVercel(chapterId, language)
+      if (blobUrl) {
+        try {
+          const blob = await head(blobUrl)
+          return {
+            url: blobUrl,
+            chapterId,
+            language,
+            cached: true,
+            size: blob.size,
+            uploadedAt: blob.uploadedAt
+          }
+        } catch (error) {
+          console.warn('[Blob Storage] Error getting blob info:', error)
+          return {
+            url: blobUrl,
+            chapterId,
+            language,
+            cached: true
+          }
         }
       }
     }
@@ -217,36 +234,41 @@ export class AudioStorageManager {
   }
 
   static async listAllAudios(): Promise<string[]> {
-    if (!this.isVercelEnvironment()) {
-      const { readdir } = await import('fs/promises')
-      const { join } = await import('path')
-      const { existsSync } = await import('fs')
+    const allUrls: string[] = []
 
-      const AUDIO_DIR = join(process.cwd(), "public", "audio")
-      
-      if (!existsSync(AUDIO_DIR)) {
-        return []
-      }
+    // Always check local files first
+    const { readdir } = await import('fs/promises')
+    const { join } = await import('path')
+    const { existsSync } = await import('fs')
 
+    const AUDIO_DIR = join(process.cwd(), "public", "audio")
+    
+    if (existsSync(AUDIO_DIR)) {
       try {
         const files = await readdir(AUDIO_DIR)
-        return files
+        const localUrls = files
           .filter(file => file.endsWith('.mp3') || file.endsWith('.wav') || file.endsWith('.ogg') || file.endsWith('.m4a'))
           .map(file => `/audio/${file}`)
+        allUrls.push(...localUrls)
       } catch (error) {
         console.warn('[Local Storage] Error listing audio files:', error)
-        return []
       }
     }
 
-    try {
-      const { blobs } = await list({
-        prefix: 'audio/'
-      })
-      return blobs.map(blob => blob.url)
-    } catch (error) {
-      console.warn('[Blob Storage] Error listing audio files:', error)
-      return []
+    // If in Vercel environment with token, also list blob files
+    if (this.isVercelEnvironment() && this.hasBlobToken()) {
+      try {
+        const { blobs } = await list({
+          prefix: 'audio/'
+        })
+        const blobUrls = blobs.map(blob => blob.url)
+        allUrls.push(...blobUrls)
+      } catch (error) {
+        console.warn('[Blob Storage] Error listing audio files:', error)
+      }
     }
+
+    // Remove duplicates
+    return [...new Set(allUrls)]
   }
 }

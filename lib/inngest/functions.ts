@@ -2,6 +2,7 @@ import { inngest } from "./client";
 import { join } from "path";
 import { writeFile } from "fs/promises";
 import { updateJob } from "@/lib/jobs-store";
+import { AudioStorageManager } from "@/lib/audio-storage";
 
 // Import TTS helper functions (we'll need to extract these from the route)
 function chunkText(text: string, maxLength: number = 5000): string[] {
@@ -112,7 +113,7 @@ async function generateTTSWithGemini(
 }
 
 function pcmToWav(
-  pcmBuffer: Buffer,
+  pcmBuffer: Uint8Array,
   sampleRate: number = 24000,
   channels: number = 1,
   bitsPerSample: number = 16
@@ -152,7 +153,7 @@ function pcmToWav(
   const length = dataSize > 0xffffffff ? 0xffffffff : dataSize;
 
   writeUInt32LE(40, length);
-  pcmBuffer.copy(buffer, 44);
+  buffer.set(pcmBuffer, 44);
 
   return buffer;
 }
@@ -183,25 +184,8 @@ export const generateAudioBackground = inngest.createFunction(
 
     // Step 1: Check for existing audio
     const existingAudio = await step.run("check-existing-audio", async () => {
-      const AUDIO_DIR = join(process.cwd(), "public", "audio");
-      const { readdir } = await import("fs/promises");
-      
-      try {
-        const existingFiles = await readdir(AUDIO_DIR);
-        const existingFile = existingFiles.find((file: string) =>
-          file.startsWith(`${chapterId}-${language}-`) &&
-          (file.endsWith(".mp3") || file.endsWith(".wav") || file.endsWith(".ogg") || file.endsWith(".m4a"))
-        );
-
-        if (existingFile) {
-          console.log(`[Inngest] Using existing audio file: ${existingFile}`);
-          return `/audio/${existingFile}`;
-        }
-      } catch (error) {
-        console.log("[Inngest] Audio directory not found, creating...");
-      }
-      
-      return null;
+      const audioInfo = await AudioStorageManager.getAudioInfo(chapterId, language);
+      return audioInfo?.url || null;
     });
 
     if (existingAudio) {
@@ -215,29 +199,22 @@ export const generateAudioBackground = inngest.createFunction(
       return { audioUrl: existingAudio, cached: true, chapterId, language };
     }
 
-    // Step 2: Ensure audio directory exists
-    await step.run("ensure-audio-dir", async () => {
-      await ensureAudioDir();
-    });
-
-    // Step 3: Generate audio with progress tracking
-    const audioUrl = await step.run("generate-audio", async () => {
+    // Step 2: Generate audio with progress tracking
+    const audioResult = await step.run("generate-audio", async () => {
       try {
-        const AUDIO_DIR = join(process.cwd(), "public", "audio");
         const chunks = chunkText(text, 5000);
         let detectedMimeType = "audio/mpeg";
         let sampleRate = 24000;
 
         console.log(`[Inngest] Generating audio for ${chunks.length} chunks`);
 
-        const audioFileName = `${chapterId}-${language}-${Date.now()}.wav`;
-        const audioPath = join(AUDIO_DIR, audioFileName);
+        let finalAudioBuffer: Buffer;
 
-      if (chunks.length === 1) {
-        const result = await generateTTSWithGemini(chunks[0], language);
-        detectedMimeType = result.mimeType;
+        if (chunks.length === 1) {
+          const result = await generateTTSWithGemini(chunks[0], language);
+          detectedMimeType = result.mimeType;
 
-        let audioBuffer = result.buffer;
+          let audioBuffer = result.buffer;
 
         if (detectedMimeType.includes("L16") || detectedMimeType.includes("pcm")) {
           const rateMatch = detectedMimeType.match(/rate=(\d+)/);
@@ -245,40 +222,48 @@ export const generateAudioBackground = inngest.createFunction(
             sampleRate = parseInt(rateMatch[1], 10);
           }
           console.log(`[Inngest] Converting PCM to WAV format (sample rate: ${sampleRate}Hz)`);
-          audioBuffer = pcmToWav(result.buffer, sampleRate);
+          audioBuffer = pcmToWav(Buffer.from(result.buffer), sampleRate);
         }
 
-        await writeFile(audioPath, audioBuffer);
-        console.log(`[Inngest] Audio file saved: ${audioPath}, size: ${audioBuffer.length} bytes`);
-      } else {
-        const audioChunks: Buffer[] = [];
-        for (let i = 0; i < chunks.length; i++) {
-          console.log(`[Inngest] Processing chunk ${i + 1}/${chunks.length}`);
-          const result = await generateTTSWithGemini(chunks[i], language);
-          audioChunks.push(result.buffer);
-          if (i === 0) {
-            detectedMimeType = result.mimeType;
-            if (detectedMimeType.includes("L16") || detectedMimeType.includes("pcm")) {
-              const rateMatch = detectedMimeType.match(/rate=(\d+)/);
-              if (rateMatch) {
-                sampleRate = parseInt(rateMatch[1], 10);
+          finalAudioBuffer = Buffer.from(audioBuffer);
+          console.log(`[Inngest] Audio generated, size: ${audioBuffer.length} bytes`);
+        } else {
+          const audioChunks: Buffer[] = [];
+          for (let i = 0; i < chunks.length; i++) {
+            console.log(`[Inngest] Processing chunk ${i + 1}/${chunks.length}`);
+            const result = await generateTTSWithGemini(chunks[i], language);
+            audioChunks.push(result.buffer);
+            if (i === 0) {
+              detectedMimeType = result.mimeType;
+              if (detectedMimeType.includes("L16") || detectedMimeType.includes("pcm")) {
+                const rateMatch = detectedMimeType.match(/rate=(\d+)/);
+                if (rateMatch) {
+                  sampleRate = parseInt(rateMatch[1], 10);
+                }
               }
             }
           }
-        }
 
-        let combinedAudio = Buffer.concat(audioChunks);
+          let combinedAudio = Buffer.concat(audioChunks);
 
         if (detectedMimeType.includes("L16") || detectedMimeType.includes("pcm")) {
           console.log(`[Inngest] Converting PCM to WAV format (sample rate: ${sampleRate}Hz)`);
-          combinedAudio = pcmToWav(combinedAudio, sampleRate);
+          combinedAudio = pcmToWav(Buffer.from(combinedAudio), sampleRate);
         }
 
-        await writeFile(audioPath, combinedAudio);
-        console.log(`[Inngest] Audio file saved: ${audioPath}, size: ${combinedAudio.length} bytes`);
-      }
+          finalAudioBuffer = Buffer.from(combinedAudio);
+          console.log(`[Inngest] Audio generated, size: ${combinedAudio.length} bytes`);
+        }
 
-      return `/audio/${audioFileName}`;
+        // Store audio using AudioStorageManager (will use Vercel Blob if available)
+        const storedAudio = await AudioStorageManager.storeAudio({
+          chapterId,
+          language,
+          audioBuffer: finalAudioBuffer,
+          mimeType: 'audio/wav'
+        });
+
+        return storedAudio;
       } catch (error) {
         // Update job as failed
         if (jobId) {
@@ -291,17 +276,17 @@ export const generateAudioBackground = inngest.createFunction(
       }
     });
 
-    console.log(`[Inngest] Audio generation complete: ${audioUrl}`);
+    console.log(`[Inngest] Audio generation complete: ${audioResult.url}`);
 
     // Update job as completed
     if (jobId) {
       updateJob(jobId, { 
         status: "completed", 
-        audioUrl 
+        audioUrl: audioResult.url
       });
     }
 
-    return { audioUrl, cached: false, chapterId, language, sessionId };
+    return { audioUrl: audioResult.url, cached: audioResult.cached, chapterId, language, sessionId };
   }
 );
 

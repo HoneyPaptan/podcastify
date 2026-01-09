@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inngest } from "@/lib/inngest/client";
 import { createJob } from "@/lib/jobs-store";
-import { join } from "path";
-
-const AUDIO_DIR = join(process.cwd(), "public", "audio");
+import { AudioStorageManager } from "@/lib/audio-storage";
 
 // POST /api/tts-async - Trigger background audio generation
 export async function POST(request: NextRequest) {
@@ -34,19 +32,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for existing audio first
-    const existingFiles = await import("fs/promises").then((fs) =>
-      fs.readdir(AUDIO_DIR).catch(() => [])
-    );
-
-    const existingFile = existingFiles.find((file: string) =>
-      file.startsWith(`${chapterId}-${language}-`) &&
-      (file.endsWith(".mp3") || file.endsWith(".wav") || file.endsWith(".ogg") || file.endsWith(".m4a"))
-    );
-
-    if (existingFile) {
-      console.log(`[TTS Async] Using existing audio file: ${existingFile}`);
+    const audioInfo = await AudioStorageManager.getAudioInfo(chapterId, language);
+    if (audioInfo) {
+      console.log(`[TTS Async] Using existing audio: ${audioInfo.url}`);
       return NextResponse.json({
-        audioUrl: `/audio/${existingFile}`,
+        audioUrl: audioInfo.url,
         chapterId: chapterId,
         language: language,
         cached: true,
